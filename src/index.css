@@ -1,0 +1,10 @@
+@import "tailwindcss";
+
+@layer base {
+  button, [role="button"], label[for], label:has(input) {
+    cursor: pointer;
+  }
+  button:disabled {
+    cursor: not-allowed;
+  }
+}

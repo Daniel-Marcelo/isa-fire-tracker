@@ -1,0 +1,52 @@
+// VHVG (Vanguard FTSE Developed World UCITS ETF USD Accumulating) top holdings
+// Weights are APPROXIMATE % of fund NAV — verify and update periodically from:
+// https://www.vanguard.co.uk/professional/product/etf/equity/9680/ftse-developed-world-ucits-etf-usd-accumulating#portfolio-data
+export const VHVG_UPDATED = '2026-06-approx';
+
+import type { FundHolding } from './vwrl-holdings';
+
+export const VHVG_HOLDINGS: FundHolding[] = [
+  { ticker: 'NVDA',    name: 'NVIDIA Corp',                        weight: 5.09, country: 'US', sector: 'Technology' },
+  { ticker: 'AAPL',    name: 'Apple Inc',                          weight: 4.26, country: 'US', sector: 'Technology' },
+  { ticker: 'MSFT',    name: 'Microsoft Corp',                     weight: 3.30, country: 'US', sector: 'Technology' },
+  { ticker: 'AMZN',    name: 'Amazon.com Inc',                     weight: 2.77, country: 'US', sector: 'Consumer' },
+  { ticker: 'GOOGL',   name: 'Alphabet Inc (Class A)',             weight: 2.43, country: 'US', sector: 'Technology' },
+  { ticker: 'AVGO',    name: 'Broadcom Inc',                       weight: 2.10, country: 'US', sector: 'Technology' },
+  { ticker: 'GOOG',    name: 'Alphabet Inc (Class C)',             weight: 1.98, country: 'US', sector: 'Technology' },
+  { ticker: 'META',    name: 'Meta Platforms Inc',                 weight: 1.46, country: 'US', sector: 'Technology' },
+  { ticker: 'TSLA',    name: 'Tesla Inc',                          weight: 1.18, country: 'US', sector: 'Consumer' },
+  { ticker: 'LLY',     name: 'Eli Lilly & Co',                    weight: 0.81, country: 'US', sector: 'Healthcare' },
+  { ticker: 'JPM',     name: 'JPMorgan Chase & Co',                weight: 0.79, country: 'US', sector: 'Financials' },
+  { ticker: 'BRK.B',   name: 'Berkshire Hathaway Inc',            weight: 0.77, country: 'US', sector: 'Financials' },
+  { ticker: 'XOM',     name: 'Exxon Mobil Corp',                   weight: 0.71, country: 'US', sector: 'Energy' },
+  { ticker: 'MU',      name: 'Micron Technology Inc',              weight: 0.63, country: 'US', sector: 'Technology' },
+  { ticker: 'WMT',     name: 'Walmart Inc',                        weight: 0.62, country: 'US', sector: 'Consumer' },
+  { ticker: 'AMD',     name: 'Advanced Micro Devices Inc',         weight: 0.62, country: 'US', sector: 'Technology' },
+  { ticker: 'ASML',    name: 'ASML Holding NV',                    weight: 0.61, country: 'NL', sector: 'Technology' },
+  { ticker: 'V',       name: 'Visa Inc',                           weight: 0.60, country: 'US', sector: 'Financials' },
+  { ticker: 'JNJ',     name: 'Johnson & Johnson',                  weight: 0.60, country: 'US', sector: 'Healthcare' },
+  { ticker: 'COST',    name: 'Costco Wholesale Corp',              weight: 0.49, country: 'US', sector: 'Consumer' },
+  { ticker: 'INTC',    name: 'Intel Corp',                         weight: 0.46, country: 'US', sector: 'Technology' },
+  { ticker: 'CAT',     name: 'Caterpillar Inc',                    weight: 0.45, country: 'US', sector: 'Industrials' },
+  { ticker: 'MA',      name: 'Mastercard Inc',                     weight: 0.44, country: 'US', sector: 'Financials' },
+  { ticker: 'NFLX',    name: 'Netflix Inc',                        weight: 0.43, country: 'US', sector: 'Technology' },
+  { ticker: 'ABBV',    name: 'AbbVie Inc',                         weight: 0.41, country: 'US', sector: 'Healthcare' },
+  { ticker: 'CSCO',    name: 'Cisco Systems Inc',                  weight: 0.40, country: 'US', sector: 'Technology' },
+  { ticker: 'CVX',     name: 'Chevron Corp',                       weight: 0.39, country: 'US', sector: 'Energy' },
+  { ticker: 'PG',      name: 'Procter & Gamble Co',                weight: 0.38, country: 'US', sector: 'Consumer' },
+  { ticker: 'UNH',     name: 'UnitedHealth Group Inc',             weight: 0.37, country: 'US', sector: 'Healthcare' },
+  { ticker: 'LRCX',    name: 'Lam Research Corp',                  weight: 0.36, country: 'US', sector: 'Technology' },
+  { ticker: 'HD',      name: 'Home Depot Inc',                     weight: 0.36, country: 'US', sector: 'Consumer' },
+  { ticker: 'AMAT',    name: 'Applied Materials Inc',              weight: 0.34, country: 'US', sector: 'Technology' },
+  { ticker: 'HSBA',    name: 'HSBC Holdings PLC',                  weight: 0.34, country: 'GB', sector: 'Financials' },
+  { ticker: 'BAC',     name: 'Bank of America Corp',               weight: 0.33, country: 'US', sector: 'Financials' },
+  { ticker: 'KO',      name: 'Coca-Cola Co',                       weight: 0.33, country: 'US', sector: 'Consumer' },
+  { ticker: 'PLTR',    name: 'Palantir Technologies Inc',          weight: 0.33, country: 'US', sector: 'Technology' },
+  { ticker: 'GE',      name: 'General Electric Co',                weight: 0.33, country: 'US', sector: 'Industrials' },
+  { ticker: 'GEV',     name: 'GE Vernova Inc',                     weight: 0.32, country: 'US', sector: 'Industrials' },
+  { ticker: 'AZN',     name: 'AstraZeneca PLC',                    weight: 0.31, country: 'GB', sector: 'Healthcare' },
+  { ticker: 'ROG',     name: 'Roche Holding AG',                   weight: 0.31, country: 'CH', sector: 'Healthcare' },
+  { ticker: 'NOVN',    name: 'Novartis AG',                        weight: 0.31, country: 'CH', sector: 'Healthcare' },
+  { ticker: 'ORCL',    name: 'Oracle Corp',                        weight: 0.30, country: 'US', sector: 'Technology' },
+  { ticker: 'OTHER',   name: 'Other',                              weight: 60.18, country: '',  sector: 'Other' },
+];
