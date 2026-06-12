@@ -1,5 +1,5 @@
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import type { AppData, FundHolding } from '../types';
+import type { AppData, FundHolding, UploadedFundHoldings } from '../types';
 import { useCurrency } from '../contexts/CurrencyContext';
 
 interface Props {

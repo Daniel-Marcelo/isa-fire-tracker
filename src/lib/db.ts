@@ -12,7 +12,13 @@ export async function loadFundHoldings(): Promise<UploadedFundHoldings[]> {
     console.warn('Failed to load fund holdings:', error.message);
     return [];
   }
-  return (data ?? []) as UploadedFundHoldings[];
+  return (data ?? []).map(r => ({
+    fundTicker: r.fund_ticker,
+    fundName: r.fund_name,
+    asAt: r.as_at,
+    uploadedAt: r.uploaded_at,
+    holdings: r.holdings,
+  })) as UploadedFundHoldings[];
 }
 
 export async function saveFundHolding(holding: UploadedFundHoldings): Promise<void> {

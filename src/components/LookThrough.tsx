@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Upload } from 'lucide-react';
-import type { AppData, FundHolding } from '../types';
+import type { AppData, FundHolding, UploadedFundHoldings } from '../types';
 import { useCurrency } from '../contexts/CurrencyContext';
 import ExposureCharts from './ExposureCharts';
 
