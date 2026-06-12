@@ -14,7 +14,7 @@ interface Props {
 type Step = 'upload' | 'preview';
 
 export default function CSVImportModal({ providers, onClose, onImport }: Props) {
-  const { fmt } = useCurrency();
+  const { fmt, currency } = useCurrency();
   const [brokerId, setBrokerId] = useState(BROKER_PARSERS[0].id);
   const [targetProviderId, setTargetProviderId] = useState(providers[0]?.id ?? '');
   const [step, setStep] = useState<Step>('upload');

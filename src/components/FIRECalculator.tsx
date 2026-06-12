@@ -318,7 +318,7 @@ export default function FIRECalculator({ data, onChange }: Props) {
                 const prev = result.points[i - 1];
                 const year = currentYear + (pt.age - s.currentAge);
                 const retireAge = Math.min(result.earlyFireAge ?? Infinity, result.fullFireAge ?? Infinity);
-                const isFired = isFinite(retireAge) && pt.age >= retireAge;
+                const _isFired = isFinite(retireAge) && pt.age >= retireAge;
                 const pensionAccessAge = s.pensionAccessAge ?? 57;
                 const prevPensionUnlocked = prev ? prev.age >= pensionAccessAge : false;
                 const fireAge = result.earlyFireAge ?? result.fullFireAge;

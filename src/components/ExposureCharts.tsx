@@ -4,6 +4,7 @@ import { useCurrency } from '../contexts/CurrencyContext';
 
 interface Props {
   data: AppData;
+  fundHoldings: UploadedFundHoldings[];
 }
 
 const SECTOR_COLOURS: Record<string, string> = {
@@ -41,10 +42,10 @@ function CustomTooltip({ active, payload, fmt }: { active?: boolean; payload?: {
   );
 }
 
-export default function ExposureCharts({ data }: Props) {
+export default function ExposureCharts({ data, fundHoldings }: Props) {
   const { fmt } = useCurrency();
 
-  const fundRegistry = (data.uploadedFundHoldings ?? []).map(u => ({
+  const fundRegistry = fundHoldings.map(u => ({
     id: u.fundTicker.toUpperCase(),
     holdings: u.holdings as FundHolding[],
   }));

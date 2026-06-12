@@ -1,17 +1,17 @@
 import { useState } from 'react';
 import { Upload, Trash2, FileSpreadsheet, CalendarDays, Hash } from 'lucide-react';
-import type { AppData, UploadedFundHoldings } from '../types';
+import type { UploadedFundHoldings } from '../types';
 import FundUploadModal from './FundUploadModal';
 
 interface Props {
-  data: AppData;
+  fundHoldings: UploadedFundHoldings[];
   onUpdateFundHoldings: (holdings: UploadedFundHoldings) => void;
   onDeleteFundHoldings: (fundTicker: string) => void;
 }
 
-export default function FundManager({ data, onUpdateFundHoldings, onDeleteFundHoldings }: Props) {
+export default function FundManager({ fundHoldings, onUpdateFundHoldings, onDeleteFundHoldings }: Props) {
   const [showUpload, setShowUpload] = useState(false);
-  const uploaded = data.uploadedFundHoldings ?? [];
+  const uploaded = fundHoldings;
   const existingTickers = uploaded.map(u => u.fundTicker);
 
   return (

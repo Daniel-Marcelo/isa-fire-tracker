@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Plus, Pencil, Trash2, ChevronDown, ChevronRight, TrendingUp, TrendingDown, Upload } from 'lucide-react';
 import type { AppData, Provider, Holding, AccountType } from '../types';
-import { fetchLivePrices, fetchTickerInfo, searchStocks } from '../lib/firebasePrices';
+import { fetchTickerInfo, searchStocks } from '../lib/firebasePrices';
 import { uid, PROVIDER_COLORS, getCurrencySymbol } from '../utils';
 import { useCurrency } from '../contexts/CurrencyContext';
 import { convertAmount, type FxRates } from '../lib/fxRates';

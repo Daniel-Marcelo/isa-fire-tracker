@@ -50,7 +50,6 @@ export interface AppData {
   contributions: TaxYearContribution[];
   fireSettings: FireSettings;
   userSettings: UserSettings;
-  uploadedFundHoldings?: UploadedFundHoldings[];
 }
 
 export interface TaxYearContribution {

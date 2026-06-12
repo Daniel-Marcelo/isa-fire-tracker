@@ -7,6 +7,7 @@ import ExposureCharts from './ExposureCharts';
 
 interface Props {
   data: AppData;
+  fundHoldings: UploadedFundHoldings[];
 }
 
 interface ExposureRow {
@@ -50,18 +51,18 @@ function matchesFund(h: { ticker?: string; name: string }, fundId: string) {
   );
 }
 
-export default function LookThrough({ data }: Props) {
+export default function LookThrough({ data, fundHoldings }: Props) {
   const { fmt } = useCurrency();
   const [sectorFilter, setSectorFilter] = useState<string>('All');
 
   const fundRegistry = useMemo(() =>
-    (data.uploadedFundHoldings ?? []).map(u => ({
+    fundHoldings.map(u => ({
       id: u.fundTicker.toUpperCase(),
       label: u.fundTicker.toUpperCase(),
       holdings: u.holdings as FundHolding[],
       updated: u.asAt,
     })),
-  [data.uploadedFundHoldings]);
+  [fundHoldings]);
 
   const allHoldings = data.providers.flatMap(p => p.holdings);
 
@@ -176,7 +177,7 @@ export default function LookThrough({ data }: Props) {
       </div>
 
       {/* Exposure donuts */}
-      <ExposureCharts data={data} />
+      <ExposureCharts data={data} fundHoldings={fundHoldings} />
 
       {/* Sector filter */}
       <div className="flex gap-2 flex-wrap">

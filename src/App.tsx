@@ -5,7 +5,9 @@ import type { User } from '@supabase/supabase-js';
 import type { AppData, UploadedFundHoldings } from './types';
 import { defaultData, exportData, importData } from './store';
 import { supabase } from './lib/supabase';
-import { loadFromSupabase, saveToSupabase } from './lib/db';
+import { loadFromSupabase, saveToSupabase, loadFundHoldings, saveFundHolding, deleteFundHolding } from './lib/db';
+
+const ADMIN_EMAIL = import.meta.env.VITE_ADMIN_EMAIL as string | undefined;
 import { fetchLivePrices } from './lib/firebasePrices';
 import { fetchFxRates, convertAmount, type FxRates } from './lib/fxRates';
 import { formatCurrency, formatCurrencyShort, SUPPORTED_CURRENCIES } from './utils';
@@ -31,6 +33,7 @@ export default function App() {
   const [livePricesUpdatedAt, setLivePricesUpdatedAt] = useState<Date | null>(null);
   const [livePricesLoading, setLivePricesLoading] = useState(false);
   const [fxRates, setFxRates] = useState<FxRates>({ GBP: 1 });
+  const [fundHoldings, setFundHoldings] = useState<UploadedFundHoldings[]>([]);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const baseData = useRef<AppData>(defaultData);
   const livePricesRef = useRef<Record<string, number>>({});
@@ -88,13 +91,13 @@ export default function App() {
     };
   }
 
-  // Load from Supabase when user signs in
+  // Load user data + shared fund holdings when user signs in
   useEffect(() => {
     if (!user) return;
     setDataReady(false);
     setSyncState('syncing');
-    loadFromSupabase()
-      .then(remote => {
+    Promise.all([loadFromSupabase(), loadFundHoldings()])
+      .then(([remote, funds]) => {
         const loaded = remote ? {
           ...defaultData,
           ...remote,
@@ -103,6 +106,7 @@ export default function App() {
         } : defaultData;
         baseData.current = loaded;
         setData(loaded);
+        setFundHoldings(funds);
         setSyncState('idle');
         setDataReady(true);
       })
@@ -175,20 +179,21 @@ export default function App() {
     fmtShort: (v: number) => formatCurrencyShort(v, currency),
   }), [currency]);
 
-  function handleUpdateFundHoldings(uploaded: UploadedFundHoldings) {
-    const existing = data.uploadedFundHoldings ?? [];
-    const rest = existing.filter(u => u.fundTicker !== uploaded.fundTicker);
-    handleChange({ ...data, uploadedFundHoldings: [...rest, uploaded] });
+  async function handleUpdateFundHoldings(uploaded: UploadedFundHoldings) {
+    await saveFundHolding(uploaded);
+    setFundHoldings(prev => [...prev.filter(f => f.fundTicker !== uploaded.fundTicker), uploaded]);
   }
 
-  function handleDeleteFundHoldings(fundTicker: string) {
-    const existing = data.uploadedFundHoldings ?? [];
-    handleChange({ ...data, uploadedFundHoldings: existing.filter(u => u.fundTicker !== fundTicker) });
+  async function handleDeleteFundHoldings(fundTicker: string) {
+    await deleteFundHolding(fundTicker);
+    setFundHoldings(prev => prev.filter(f => f.fundTicker !== fundTicker));
   }
 
   function handleCurrencyChange(newCurrency: string) {
     handleChange({ ...data, userSettings: { ...data.userSettings, currency: newCurrency } });
   }
+
+  const isAdmin = !!ADMIN_EMAIL && user?.email === ADMIN_EMAIL;
 
   if (!authReady) return <Spinner />;
 
@@ -216,7 +221,7 @@ export default function App() {
                     <nav className="hidden sm:flex bg-gray-100 rounded-xl p-1 gap-1">
                       <TabLink to="/" icon={<BarChart3 size={15} />} label="ISA Portfolio" />
                       <TabLink to="/lookthrough" icon={<Layers size={15} />} label="Look-through" />
-                      <TabLink to="/funds" icon={<FolderOpen size={15} />} label="Fund Holdings" />
+                      {isAdmin && <TabLink to="/funds" icon={<FolderOpen size={15} />} label="Fund Holdings" />}
                       <TabLink to="/fire" icon={<Flame size={15} />} label="FIRE Calculator" />
                     </nav>
 
@@ -258,15 +263,15 @@ export default function App() {
                 <nav className="sm:hidden fixed bottom-0 inset-x-0 z-40 bg-white border-t border-gray-100 flex">
                   <BottomTabLink to="/" icon={<BarChart3 size={20} />} label="Portfolio" />
                   <BottomTabLink to="/lookthrough" icon={<Layers size={20} />} label="Look-through" />
-                  <BottomTabLink to="/funds" icon={<FolderOpen size={20} />} label="Funds" />
+                  {isAdmin && <BottomTabLink to="/funds" icon={<FolderOpen size={20} />} label="Funds" />}
                   <BottomTabLink to="/fire" icon={<Flame size={20} />} label="FIRE" />
                 </nav>
 
                 <main className="max-w-5xl mx-auto px-4 py-6 pb-24 sm:pb-6">
                   <Routes>
                     <Route path="/" element={<ISATracker data={data} onChange={handleChange} livePrices={livePrices} fxRates={fxRates} />} />
-                    <Route path="/lookthrough" element={<LookThrough data={data} />} />
-                    <Route path="/funds" element={<FundManager data={data} onUpdateFundHoldings={handleUpdateFundHoldings} onDeleteFundHoldings={handleDeleteFundHoldings} />} />
+                    <Route path="/lookthrough" element={<LookThrough data={data} fundHoldings={fundHoldings} />} />
+                    {isAdmin && <Route path="/funds" element={<FundManager fundHoldings={fundHoldings} onUpdateFundHoldings={handleUpdateFundHoldings} onDeleteFundHoldings={handleDeleteFundHoldings} />} />}
                     <Route path="/fire" element={<FIRECalculator data={data} onChange={handleChange} />} />
                     <Route path="*" element={<Navigate to="/" replace />} />
                   </Routes>
@@ -326,7 +331,7 @@ function Spinner() {
 interface UserMenuProps {
   email: string;
   currency: string;
-  currencies: { code: string; label: string }[];
+  currencies: readonly { readonly code: string; readonly label: string }[];
   onCurrencyChange: (c: string) => void;
   onExport: () => void;
   onImport: (e: React.ChangeEvent<HTMLInputElement>) => void;
