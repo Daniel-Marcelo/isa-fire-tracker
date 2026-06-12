@@ -4,7 +4,7 @@ import {
   ReferenceLine, ResponsiveContainer, Legend,
 } from 'recharts';
 import type { AppData, FireSettings } from '../types';
-import { formatCurrency, formatCurrencyShort } from '../utils';
+import { useCurrency } from '../contexts/CurrencyContext';
 
 interface Props {
   data: AppData;
@@ -17,7 +17,7 @@ interface ProjectionResult {
   fullFireAge: number | null;    // retire at pension access age — pension is self-sustaining
 }
 
-const PENSION_SWR = 0.035;
+const DEFAULT_SWR = 0.035;
 
 // Real monthly rate: (1 + nominal) / (1 + inflation) - 1, converted to monthly
 function realMonthlyRate(nominalPct: number, inflationPct: number): number {
@@ -34,7 +34,8 @@ function findFireAges(
   const mRate = realMonthlyRate(expectedAnnualReturn, inflationRate);
   const totalMonthlyPension = monthlyPensionContribution ?? 0;
   const monthlySpend = annualExpensesInRetirement / 12; // constant real spend
-  const pensionTarget = annualExpensesInRetirement / PENSION_SWR;
+  const swr = (settings.withdrawalRate ?? DEFAULT_SWR * 100) / 100;
+  const pensionTarget = annualExpensesInRetirement / swr;
 
   let accessible = accessibleStart;
   let pension = pensionStart;
@@ -58,19 +59,20 @@ function findFireAges(
           for (let i = 0; i < monthsUntilPension; i++) {
             simPension = simPension * (1 + mRate);
           }
-          if (sim + simPension >= pensionTarget) earlyFireAge = age + 1;
+          if (sim + simPension >= pensionTarget) earlyFireAge = age;
         }
       }
 
       if (fullFireAge === null && age >= pensionAccessAge) {
-        if (Math.max(accessible, 0) + pension >= pensionTarget) fullFireAge = age + 1;
+        if (Math.max(accessible, 0) + pension >= pensionTarget) fullFireAge = age;
       }
 
       if (earlyFireAge !== null && fullFireAge !== null) break;
     }
 
-    accessible = accessible * (1 + mRate) + monthlyContribution;
-    pension = pension * (1 + mRate) + totalMonthlyPension;
+    const retiredYet = earlyFireAge !== null && age >= earlyFireAge;
+    accessible = accessible * (1 + mRate) + (retiredYet ? 0 : monthlyContribution);
+    pension = pension * (1 + mRate) + (retiredYet ? 0 : totalMonthlyPension);
   }
 
   return { earlyFireAge, fullFireAge };
@@ -96,7 +98,7 @@ function project(
 
   for (let m = 0; m <= 600; m++) {
     const age = currentAge + m / 12;
-    const retired = isFinite(retireAge) && Math.floor(age) + 1 >= retireAge;
+    const retired = isFinite(retireAge) && age >= retireAge;
     const pensionUnlockedForDrawdown = age >= pensionAccessAge;
 
     if (m % 12 === 0) {
@@ -110,11 +112,15 @@ function project(
 
     if (retired) {
       if (!pensionUnlockedForDrawdown) {
+        // Pre-pension: draw from ISA only, pension compounds untouched
         accessible = accessible * (1 + mRate) - monthlySpend;
         pension = pension * (1 + mRate);
       } else {
-        accessible = accessible * (1 + mRate);
-        pension = pension * (1 + mRate) - monthlySpend;
+        // Post-pension: draw from combined proportionally so neither pot is idle
+        const total = Math.max(accessible + pension, 0);
+        const accRatio = total > 0 ? Math.max(accessible, 0) / total : 0;
+        accessible = accessible * (1 + mRate) - monthlySpend * accRatio;
+        pension = pension * (1 + mRate) - monthlySpend * (1 - accRatio);
       }
     } else {
       accessible = accessible * (1 + mRate) + monthlyContribution;
@@ -130,6 +136,7 @@ const PENSION_TYPES = new Set(['SIPP', 'Workplace Pension']);
 
 export default function FIRECalculator({ data, onChange }: Props) {
   const s = data.fireSettings;
+  const { fmt, fmtShort } = useCurrency();
   const [activeTab, setActiveTab] = useState<'split' | 'combined'>('split');
 
   function update(patch: Partial<FireSettings>) {
@@ -161,6 +168,7 @@ export default function FIRECalculator({ data, onChange }: Props) {
           <NumberInput label="Expected annual return (%/yr)" value={s.expectedAnnualReturn} min={0} max={30} step={0.5} onChange={v => update({ expectedAnnualReturn: v })} suffix="%" hint={`Nominal return (e.g. 7%). Real return ≈ ${(s.expectedAnnualReturn - s.inflationRate).toFixed(1)}%`} />
           <NumberInput label="Inflation rate (%/yr)" value={s.inflationRate} min={0} max={20} step={0.5} onChange={v => update({ inflationRate: v })} suffix="%" hint="Subtracted from nominal return. All values shown in today's money." />
           <NumberInput label="Pension access age" value={s.pensionAccessAge ?? 57} min={55} max={70} onChange={v => update({ pensionAccessAge: v })} />
+          <NumberInput label="Safe withdrawal rate (%)" value={s.withdrawalRate ?? 3.5} min={2} max={6} step={0.1} onChange={v => update({ withdrawalRate: v })} suffix="%" hint={`FIRE pot needed: ${fmt(s.annualExpensesInRetirement / ((s.withdrawalRate ?? 3.5) / 100))}`} />
         </div>
       </div>
 
@@ -168,7 +176,7 @@ export default function FIRECalculator({ data, onChange }: Props) {
       <div className="grid grid-cols-2 gap-4">
         <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-5">
           <p className="text-sm font-medium text-indigo-700">Accessible pot (ISA / GIA)</p>
-          <p className="text-2xl font-bold text-indigo-900 mt-1">{formatCurrency(accessibleValue)}</p>
+          <p className="text-2xl font-bold text-indigo-900 mt-1">{fmt(accessibleValue)}</p>
           <p className="text-xs text-indigo-500 mt-1">From holdings</p>
           <div className="mt-3 pt-3 border-t border-indigo-100">
             <p className="text-xs font-medium text-indigo-700 mb-2">Monthly contributions (today's £)</p>
@@ -177,7 +185,7 @@ export default function FIRECalculator({ data, onChange }: Props) {
         </div>
         <div className="bg-violet-50 border border-violet-100 rounded-2xl p-5">
           <p className="text-sm font-medium text-violet-700">Pension pot (SIPP / Workplace)</p>
-          <p className="text-2xl font-bold text-violet-900 mt-1">{formatCurrency(pensionValue)}</p>
+          <p className="text-2xl font-bold text-violet-900 mt-1">{fmt(pensionValue)}</p>
           <p className="text-xs text-violet-500 mt-1">
             From holdings · accessible at {s.pensionAccessAge ?? 57}
           </p>
@@ -264,8 +272,8 @@ export default function FIRECalculator({ data, onChange }: Props) {
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
             <XAxis dataKey="age" tick={{ fontSize: 12 }} label={{ value: 'Age', position: 'insideBottomRight', offset: -5, fontSize: 12 }} />
-            <YAxis tick={{ fontSize: 12 }} tickFormatter={formatCurrencyShort} width={70} />
-            <Tooltip formatter={(v) => formatCurrency(Number(v))} labelFormatter={l => `Age ${l}`} />
+            <YAxis tick={{ fontSize: 12 }} tickFormatter={fmtShort} width={70} />
+            <Tooltip formatter={(v) => fmt(Number(v))} labelFormatter={l => `Age ${l}`} />
             <Legend />
             <ReferenceLine x={s.pensionAccessAge ?? 57} stroke="#8b5cf6" strokeDasharray="4 3" label={{ value: `Pension unlocks`, fill: '#8b5cf6', fontSize: 11 }} />
             {(result.earlyFireAge ?? result.fullFireAge) && (
@@ -311,15 +319,15 @@ export default function FIRECalculator({ data, onChange }: Props) {
                 const year = currentYear + (pt.age - s.currentAge);
                 const retireAge = Math.min(result.earlyFireAge ?? Infinity, result.fullFireAge ?? Infinity);
                 const isFired = isFinite(retireAge) && pt.age >= retireAge;
-                const isDrawing = isFired;
                 const pensionAccessAge = s.pensionAccessAge ?? 57;
                 const prevPensionUnlocked = prev ? prev.age >= pensionAccessAge : false;
                 const fireAge = result.earlyFireAge ?? result.fullFireAge;
-                const isFireAge = fireAge !== null && Math.round(fireAge) === pt.age;
+                const isFireAge = fireAge !== null && pt.age === Math.round(fireAge);
                 const isPensionAccess = pt.age === pensionAccessAge;
                 const rateLabel = `~${(s.expectedAnnualReturn - s.inflationRate).toFixed(1)}% real (${s.expectedAnnualReturn}% − ${s.inflationRate}% inflation)`;
 
-                // All values already in today's money — no deflation needed
+                // isDrawing: was the previous year already in retirement (i.e. did drawdown happen this year)?
+                const isDrawing = isFinite(retireAge) && (prev ? prev.age >= retireAge : false);
                 const accContributed = !isDrawing ? s.monthlyContribution * 12 : 0;
                 const penContributed = !isDrawing ? (s.monthlyPensionContribution ?? 0) * 12 : 0;
                 const accWithdrawn = isDrawing && !prevPensionUnlocked ? s.annualExpensesInRetirement : 0;
@@ -348,19 +356,19 @@ export default function FIRECalculator({ data, onChange }: Props) {
                     </td>
                     <td className="px-4 py-2.5 text-gray-500">{year}</td>
                     <td className="px-4 py-2.5 text-right text-indigo-700">
-                      {formatCurrencyShort(pt.accessible)}
-                      {accGrowth !== null && prev && <Delta v={accGrowth} breakdown={{ from: prevAcc, interest: accInterest, contributed: accContributed, withdrawn: accWithdrawn, to: pt.accessible, rateLabel }} />}
+                      {fmtShort(pt.accessible)}
+                      {accGrowth !== null && prev && <Delta v={accGrowth} breakdown={{ from: prevAcc, interest: accInterest, contributed: accContributed, withdrawn: accWithdrawn, to: pt.accessible, rateLabel, isFire: isFireAge }} />}
                     </td>
                     <td className="px-4 py-2.5 text-right text-violet-700">
-                      {formatCurrencyShort(pt.pension)}
-                      {penGrowth !== null && prev && <Delta v={penGrowth} breakdown={{ from: prevPen, interest: penInterest, contributed: penContributed, withdrawn: penWithdrawn, to: pt.pension, rateLabel }} />}
+                      {fmtShort(pt.pension)}
+                      {penGrowth !== null && prev && <Delta v={penGrowth} breakdown={{ from: prevPen, interest: penInterest, contributed: penContributed, withdrawn: penWithdrawn, to: pt.pension, rateLabel, isFire: isFireAge }} />}
                     </td>
                     <td className="px-4 py-2.5 text-right font-medium text-gray-900">
-                      {formatCurrencyShort(pt.combined)}
-                      {comGrowth !== null && prev && <Delta v={comGrowth} breakdown={{ from: prevCom, interest: accInterest + penInterest, contributed: accContributed + penContributed, withdrawn: accWithdrawn + penWithdrawn, to: pt.combined, rateLabel }} />}
+                      {fmtShort(pt.combined)}
+                      {comGrowth !== null && prev && <Delta v={comGrowth} breakdown={{ from: prevCom, interest: accInterest + penInterest, contributed: accContributed + penContributed, withdrawn: accWithdrawn + penWithdrawn, to: pt.combined, rateLabel, isFire: isFireAge }} />}
                     </td>
                     <td className="px-4 py-2.5 text-right text-emerald-700 font-medium">
-                      {isFired ? formatCurrencyShort(s.annualExpensesInRetirement) : ''}
+                      {isDrawing ? fmtShort(s.annualExpensesInRetirement) : ''}
                     </td>
                   </tr>
                 );
@@ -380,6 +388,7 @@ interface DeltaBreakdown {
   withdrawn: number;
   to: number;
   rateLabel: string;
+  isFire?: boolean;
 }
 
 function TextTooltip({ children, text, className }: { children: React.ReactNode; text: string; className?: string }) {
@@ -408,6 +417,12 @@ function TextTooltip({ children, text, className }: { children: React.ReactNode;
 function Delta({ v, breakdown }: { v: number; breakdown: DeltaBreakdown }) {
   const positive = v >= 0;
   const fmt = (n: number) => n.toLocaleString('en-GB', { style: 'currency', currency: 'GBP', maximumFractionDigits: 0 });
+  const fmtShort = (n: number) => {
+    const abs = Math.abs(n);
+    if (abs >= 1_000_000) return `£${(n / 1_000_000).toFixed(2)}m`;
+    if (abs >= 1_000) return `£${(n / 1_000).toFixed(1)}k`;
+    return `£${n.toFixed(0)}`;
+  };
   const { from, interest, contributed, withdrawn, to } = breakdown;
   const ref = useRef<HTMLSpanElement>(null);
   const [tipPos, setTipPos] = useState<{ x: number; y: number } | null>(null);
@@ -415,7 +430,7 @@ function Delta({ v, breakdown }: { v: number; breakdown: DeltaBreakdown }) {
   const rows: { label: string; value: string; color?: string }[] = [
     { label: 'Previous', value: fmt(from) },
     { label: `Growth (${breakdown.rateLabel})`, value: `+${fmt(interest)}`, color: 'text-emerald-400' },
-    ...(contributed ? [{ label: 'Contributions', value: `+${fmt(contributed)}`, color: 'text-blue-400' }] : []),
+    ...(contributed ? [{ label: breakdown.isFire ? 'Final year savings' : 'Contributions', value: `+${fmt(contributed)}`, color: 'text-blue-400' }] : []),
     ...(withdrawn ? [{ label: 'Withdrawn', value: `-${fmt(withdrawn)}`, color: 'text-red-400' }] : []),
     { label: 'New total', value: fmt(to), color: 'text-white font-semibold' },
   ];
@@ -429,7 +444,7 @@ function Delta({ v, breakdown }: { v: number; breakdown: DeltaBreakdown }) {
         onMouseMove={e => setTipPos({ x: e.clientX, y: e.clientY })}
         onMouseLeave={() => setTipPos(null)}
       >
-        ({positive ? '+' : ''}{formatCurrencyShort(v)})
+        ({positive ? '+' : ''}{fmtShort(v)})
       </span>
       {tipPos && (
         <div

@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react';
-import type { AppData } from '../types';
-import { VWRL_HOLDINGS, VWRL_UPDATED } from '../data/vwrl-holdings';
-import { VHVG_HOLDINGS, VHVG_UPDATED } from '../data/vhvg-holdings';
-import { VFEG_HOLDINGS, VFEG_UPDATED } from '../data/vfeg-holdings';
-import { formatCurrency } from '../utils';
+import { Link } from 'react-router-dom';
+import { Upload } from 'lucide-react';
+import type { AppData, FundHolding } from '../types';
+import { useCurrency } from '../contexts/CurrencyContext';
+import ExposureCharts from './ExposureCharts';
 
 interface Props {
   data: AppData;
@@ -14,33 +14,33 @@ interface ExposureRow {
   name: string;
   country: string;
   sector: string;
-  fundValue: number;   // exposure via any look-through fund
-  directValue: number; // exposure from direct stock holdings
+  fundValue: number;
+  directValue: number;
   totalValue: number;
   totalPct: number;
 }
 
-const FUND_REGISTRY = [
-  { id: 'VWRL', holdings: VWRL_HOLDINGS, updated: VWRL_UPDATED, label: 'VWRL' },
-  { id: 'VHVG', holdings: VHVG_HOLDINGS, updated: VHVG_UPDATED, label: 'VHVG' },
-  { id: 'VFEG', holdings: VFEG_HOLDINGS, updated: VFEG_UPDATED, label: 'VFEG' },
-] as const;
-
 const SECTOR_COLOURS: Record<string, string> = {
-  Technology:  'bg-indigo-100 text-indigo-700',
-  Financials:  'bg-emerald-100 text-emerald-700',
-  Healthcare:  'bg-rose-100 text-rose-700',
-  Consumer:    'bg-amber-100 text-amber-700',
-  Energy:      'bg-orange-100 text-orange-700',
-  Industrials: 'bg-cyan-100 text-cyan-700',
-  Materials:   'bg-lime-100 text-lime-700',
-  Telecom:     'bg-violet-100 text-violet-700',
+  Technology:    'bg-indigo-100 text-indigo-700',
+  Financials:    'bg-emerald-100 text-emerald-700',
+  Healthcare:    'bg-rose-100 text-rose-700',
+  Consumer:      'bg-amber-100 text-amber-700',
+  Energy:        'bg-orange-100 text-orange-700',
+  Industrials:   'bg-cyan-100 text-cyan-700',
+  Materials:     'bg-lime-100 text-lime-700',
+  Telecom:       'bg-violet-100 text-violet-700',
+  'Real Estate': 'bg-sky-100 text-sky-700',
+  Utilities:     'bg-teal-100 text-teal-700',
 };
 
 const FLAG: Record<string, string> = {
   US: '🇺🇸', GB: '🇬🇧', JP: '🇯🇵', KR: '🇰🇷', TW: '🇹🇼',
-  NL: '🇳🇱', DK: '🇩🇰', CN: '🇨🇳', IN: '🇮🇳', SA: '🇸🇦',
-  ZA: '🇿🇦', CH: '🇨🇭',
+  NL: '🇳🇱', DK: '🇩🇰', CN: '🇨🇳', HK: '🇭🇰', IN: '🇮🇳',
+  SA: '🇸🇦', ZA: '🇿🇦', CH: '🇨🇭', BR: '🇧🇷', MX: '🇲🇽',
+  AU: '🇦🇺', DE: '🇩🇪', FR: '🇫🇷', SE: '🇸🇪', SG: '🇸🇬',
+  TH: '🇹🇭', ID: '🇮🇩', MY: '🇲🇾', PH: '🇵🇭', HU: '🇭🇺',
+  KW: '🇰🇼', QA: '🇶🇦', AE: '🇦🇪', PL: '🇵🇱', TR: '🇹🇷',
+  EG: '🇪🇬', GR: '🇬🇷', CL: '🇨🇱', CO: '🇨🇴', PE: '🇵🇪',
 };
 
 function matchesFund(h: { ticker?: string; name: string }, fundId: string) {
@@ -51,18 +51,27 @@ function matchesFund(h: { ticker?: string; name: string }, fundId: string) {
 }
 
 export default function LookThrough({ data }: Props) {
+  const { fmt } = useCurrency();
   const [sectorFilter, setSectorFilter] = useState<string>('All');
+
+  const fundRegistry = useMemo(() =>
+    (data.uploadedFundHoldings ?? []).map(u => ({
+      id: u.fundTicker.toUpperCase(),
+      label: u.fundTicker.toUpperCase(),
+      holdings: u.holdings as FundHolding[],
+      updated: u.asAt,
+    })),
+  [data.uploadedFundHoldings]);
 
   const allHoldings = data.providers.flatMap(p => p.holdings);
 
-  // Per-fund totals and direct holdings
-  const fundTotals = FUND_REGISTRY.map(fund => {
+  const fundTotals = fundRegistry.map(fund => {
     const held = allHoldings.filter(h => matchesFund(h, fund.id));
     return { ...fund, heldHoldings: held, total: held.reduce((s, h) => s + h.currentValue, 0) };
   });
 
-  const isFundHolding = (h: { fundId?: string; ticker?: string; name: string }) =>
-    FUND_REGISTRY.some(f => matchesFund(h, f.id));
+  const isFundHolding = (h: { ticker?: string; name: string }) =>
+    fundRegistry.some(f => matchesFund(h, f.id));
 
   const directHoldings = allHoldings.filter(h => !isFundHolding(h) && h.ticker);
   const totalPortfolio = allHoldings.reduce((s, h) => s + h.currentValue, 0);
@@ -70,8 +79,7 @@ export default function LookThrough({ data }: Props) {
   const rows = useMemo<ExposureRow[]>(() => {
     const map = new Map<string, ExposureRow>();
 
-    // Look-through each fund
-    FUND_REGISTRY.forEach(fund => {
+    fundRegistry.forEach(fund => {
       const userHoldings = allHoldings.filter(h => matchesFund(h, fund.id));
       const total = userHoldings.reduce((s, h) => s + h.currentValue, 0);
       if (total === 0) return;
@@ -96,7 +104,6 @@ export default function LookThrough({ data }: Props) {
       });
     });
 
-    // Merge / add direct stock holdings
     directHoldings.forEach(h => {
       const ticker = h.ticker!.toUpperCase();
       const existing = map.get(ticker);
@@ -122,9 +129,9 @@ export default function LookThrough({ data }: Props) {
       .slice(0, 50);
 
     return sorted.map(r => ({ ...r, totalPct: totalPortfolio > 0 ? (r.totalValue / totalPortfolio) * 100 : 0 }));
-  }, [allHoldings, directHoldings, totalPortfolio]);
+  }, [allHoldings, directHoldings, totalPortfolio, fundRegistry]);
 
-  const allFundHoldings = FUND_REGISTRY.flatMap(f => f.holdings);
+  const allFundHoldings = fundRegistry.flatMap(f => f.holdings);
   const sectors = ['All', ...Array.from(new Set(allFundHoldings.map(h => h.sector))).sort()];
   const filtered = sectorFilter === 'All' ? rows : rows.filter(r => r.sector === sectorFilter);
   const coveredPct = rows.reduce((s, r) => s + r.totalPct, 0);
@@ -132,11 +139,18 @@ export default function LookThrough({ data }: Props) {
   const anyFundHeld = fundTotals.some(f => f.total > 0);
   if (!anyFundHeld && directHoldings.length === 0) {
     return (
-      <div className="bg-white rounded-2xl border border-gray-100 p-8 text-center text-gray-400 shadow-sm">
+      <div className="bg-white rounded-2xl border border-gray-100 p-10 text-center shadow-sm">
         <p className="text-lg font-medium text-gray-500">No look-through data yet</p>
-        <p className="text-sm mt-1">
-          Tag a holding as <strong>VWRL</strong>, <strong>VHVG</strong>, or <strong>VFEG</strong>, or add direct stocks to see your effective exposure breakdown.
+        <p className="text-sm text-gray-400 mt-1 max-w-sm mx-auto">
+          Upload a fund's holdings breakdown on the Fund Holdings page, or add direct stock holdings, to see your effective exposure.
         </p>
+        <Link
+          to="/funds"
+          className="mt-4 inline-flex items-center gap-2 px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+        >
+          <Upload className="w-4 h-4" />
+          Go to Fund Holdings
+        </Link>
       </div>
     );
   }
@@ -144,13 +158,13 @@ export default function LookThrough({ data }: Props) {
   return (
     <div className="space-y-4">
       {/* Summary cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
         {fundTotals.map(f => (
           <div key={f.id} className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm">
             <p className="text-sm text-gray-500">{f.label} exposure</p>
-            <p className="text-xl font-bold text-gray-900 mt-1">{formatCurrency(f.total)}</p>
+            <p className="text-xl font-bold text-gray-900 mt-1">{fmt(f.total)}</p>
             <p className="text-xs text-gray-400 mt-0.5">
-              {f.heldHoldings.length} holding{f.heldHoldings.length !== 1 ? 's' : ''}
+              across {f.heldHoldings.length} account{f.heldHoldings.length !== 1 ? 's' : ''}
             </p>
           </div>
         ))}
@@ -160,6 +174,9 @@ export default function LookThrough({ data }: Props) {
           <p className="text-xs text-gray-400 mt-0.5">top 50 by effective value</p>
         </div>
       </div>
+
+      {/* Exposure donuts */}
+      <ExposureCharts data={data} />
 
       {/* Sector filter */}
       <div className="flex gap-2 flex-wrap">
@@ -215,15 +232,15 @@ export default function LookThrough({ data }: Props) {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-right text-gray-500">
-                      {row.fundValue > 0 ? formatCurrency(row.fundValue) : '—'}
+                      {row.fundValue > 0 ? fmt(row.fundValue) : '—'}
                     </td>
                     <td className="px-4 py-3 text-right">
                       {row.directValue > 0
-                        ? <span className="text-indigo-600 font-medium">{formatCurrency(row.directValue)}</span>
+                        ? <span className="text-indigo-600 font-medium">{fmt(row.directValue)}</span>
                         : <span className="text-gray-300">—</span>}
                     </td>
                     <td className="px-4 py-3 text-right font-semibold text-gray-900">
-                      {formatCurrency(row.totalValue)}
+                      {fmt(row.totalValue)}
                     </td>
                     <td className="px-4 py-3 text-right text-gray-600">
                       {row.totalPct.toFixed(2)}%
@@ -241,9 +258,8 @@ export default function LookThrough({ data }: Props) {
         </div>
         <div className="px-4 py-3 border-t border-gray-100 bg-gray-50">
           <p className="text-xs text-gray-400">
-            Fund weights are approximate.{' '}
-            {FUND_REGISTRY.map(f => `${f.label}: ${f.updated}`).join(' · ')}.{' '}
-            VHVG and VFEG data is approximate — update from Vanguard when possible.
+            Fund weights from uploaded Vanguard data.{' '}
+            {fundRegistry.map(f => `${f.label}: ${f.updated}`).join(' · ')}.{' '}
             Top 50 positions shown. Direct holdings merged where tickers match.
           </p>
         </div>

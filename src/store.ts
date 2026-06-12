@@ -1,4 +1,4 @@
-import type { AppData, FireSettings } from './types';
+import type { AppData, FireSettings, UserSettings } from './types';
 
 const currentTaxYear = (): number => {
   const now = new Date();
@@ -15,7 +15,11 @@ const defaultFireSettings: FireSettings = {
   expectedAnnualReturn: 7,
   inflationRate: 3,
   annualExpensesInRetirement: 25000,
-  withdrawalRate: 4.0,
+  withdrawalRate: 3.5,
+};
+
+const defaultUserSettings: UserSettings = {
+  currency: 'GBP',
 };
 
 export const defaultData: AppData = {
@@ -23,6 +27,7 @@ export const defaultData: AppData = {
   taxYear: currentTaxYear(),
   contributions: [],
   fireSettings: defaultFireSettings,
+  userSettings: defaultUserSettings,
 };
 
 export function exportData(data: AppData): void {
@@ -45,6 +50,7 @@ export function importData(file: File): Promise<AppData> {
           ...defaultData,
           ...parsed,
           fireSettings: { ...defaultData.fireSettings, ...parsed.fireSettings },
+          userSettings: { ...defaultData.userSettings, ...parsed.userSettings },
         });
       } catch {
         reject(new Error('Invalid JSON file'));

@@ -1,16 +1,33 @@
-export function formatCurrency(value: number): string {
+export const SUPPORTED_CURRENCIES = [
+  { code: 'GBP', label: 'GBP (£)' },
+  { code: 'USD', label: 'USD ($)' },
+  { code: 'EUR', label: 'EUR (€)' },
+  { code: 'CHF', label: 'CHF (Fr)' },
+  { code: 'AUD', label: 'AUD (A$)' },
+  { code: 'CAD', label: 'CAD (C$)' },
+] as const;
+
+export function getCurrencySymbol(currency: string): string {
+  return new Intl.NumberFormat('en-GB', { style: 'currency', currency, maximumFractionDigits: 0 })
+    .format(0)
+    .replace(/[\d\s,]/g, '')
+    .trim();
+}
+
+export function formatCurrency(value: number, currency = 'GBP'): string {
   return new Intl.NumberFormat('en-GB', {
     style: 'currency',
-    currency: 'GBP',
+    currency,
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(value);
 }
 
-export function formatCurrencyShort(value: number): string {
-  if (value >= 1_000_000) return `£${(value / 1_000_000).toFixed(2)}m`;
-  if (value >= 1_000) return `£${(value / 1_000).toFixed(1)}k`;
-  return formatCurrency(value);
+export function formatCurrencyShort(value: number, currency = 'GBP'): string {
+  const sym = getCurrencySymbol(currency);
+  if (value >= 1_000_000) return `${sym}${(value / 1_000_000).toFixed(2)}m`;
+  if (value >= 1_000) return `${sym}${(value / 1_000).toFixed(1)}k`;
+  return formatCurrency(value, currency);
 }
 
 export function uid(): string {

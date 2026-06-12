@@ -1,13 +1,14 @@
 import { useMemo } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import type { Provider } from '../types';
-import { formatCurrencyShort } from '../utils';
+import { useCurrency } from '../contexts/CurrencyContext';
 
 interface Props {
   providers: Provider[];
 }
 
 export default function PerformanceChart({ providers }: Props) {
+  const { fmtShort } = useCurrency();
   const data = useMemo(() => {
     // Collect all unique dates across all providers
     const dateSet = new Set<string>();
@@ -39,8 +40,8 @@ export default function PerformanceChart({ providers }: Props) {
         <LineChart data={data} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
           <XAxis dataKey="date" tick={{ fontSize: 12 }} tickFormatter={d => d.slice(5)} />
-          <YAxis tick={{ fontSize: 12 }} tickFormatter={formatCurrencyShort} width={70} />
-          <Tooltip formatter={(v) => formatCurrencyShort(Number(v))} />
+          <YAxis tick={{ fontSize: 12 }} tickFormatter={fmtShort} width={70} />
+          <Tooltip formatter={(v) => fmtShort(Number(v))} />
           <Legend />
           <Line dataKey="Total" stroke="#6366f1" strokeWidth={2} dot={false} />
           {providers.map(p => (

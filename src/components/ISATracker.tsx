@@ -1,20 +1,26 @@
-import { useState } from 'react';
-import { Plus, Pencil, Trash2, ChevronDown, ChevronRight, TrendingUp, TrendingDown } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Plus, Pencil, Trash2, ChevronDown, ChevronRight, TrendingUp, TrendingDown, Upload } from 'lucide-react';
 import type { AppData, Provider, Holding, AccountType } from '../types';
-import { uid, formatCurrency, PROVIDER_COLORS } from '../utils';
-import { getCurrentTaxYearContribution, currentTaxYear } from '../store';
+import { fetchLivePrices, fetchTickerInfo, searchStocks } from '../lib/firebasePrices';
+import { uid, PROVIDER_COLORS, getCurrencySymbol } from '../utils';
+import { useCurrency } from '../contexts/CurrencyContext';
+import { convertAmount, type FxRates } from '../lib/fxRates';
 import Modal, { ConfirmModal } from './Modal';
 import Dropdown from './Dropdown';
 import PerformanceChart from './PerformanceChart';
+import AllocationCharts from './AllocationCharts';
+import CSVImportModal from './CSVImportModal';
+import type { ParsedHolding } from '../lib/csvParsers';
 
-const ISA_ALLOWANCE = 20000;
 
 interface Props {
   data: AppData;
   onChange: (data: AppData) => void;
+  livePrices?: Record<string, number>;
+  fxRates?: FxRates;
 }
 
-export default function ISATracker({ data, onChange }: Props) {
+export default function ISATracker({ data, onChange, livePrices = {}, fxRates = {} }: Props) {
   const [showAddProvider, setShowAddProvider] = useState(false);
   const [editProvider, setEditProvider] = useState<Provider | null>(null);
   const [expandedProviders, setExpandedProviders] = useState<Set<string>>(new Set());
@@ -23,6 +29,8 @@ export default function ISATracker({ data, onChange }: Props) {
   const [filterOwner, setFilterOwner] = useState<string>('All');
   const [filterType, setFilterType] = useState<string>('All');
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [showCSVImport, setShowCSVImport] = useState(false);
+  const { fmt, currency: userCurrency } = useCurrency();
 
   const totalValue = data.providers.reduce(
     (sum, p) => sum + p.holdings.reduce((s, h) => s + h.currentValue, 0),
@@ -37,10 +45,7 @@ export default function ISATracker({ data, onChange }: Props) {
   const totalGain = totalValue - totalCostBasis;
   const totalGainPct = totalCostBasis > 0 ? (totalGain / totalCostBasis) * 100 : 0;
 
-  const currentContrib = getCurrentTaxYearContribution(data);
-  const allowanceUsedPct = Math.min((currentContrib / ISA_ALLOWANCE) * 100, 100);
-
-  const owners = ['All', ...OWNERS] as const;
+const owners = ['All', ...OWNERS] as const;
   const accountTypes = ['All', ...ACCOUNT_TYPES];
 
   const visibleProviders = data.providers.filter(p => {
@@ -111,6 +116,53 @@ export default function ISATracker({ data, onChange }: Props) {
     setEditHolding(null);
   }
 
+  function handleCSVImport(providerId: string, parsed: ParsedHolding[], mergeMode: 'replace' | 'merge') {
+    onChange({
+      ...data,
+      providers: data.providers.map(p => {
+        if (p.id !== providerId) return p;
+        let holdings: Holding[];
+        if (mergeMode === 'replace') {
+          holdings = parsed.map(ph => ({
+            id: uid(),
+            name: ph.name,
+            ticker: ph.ticker,
+            units: ph.units,
+            currentPrice: undefined,
+            currentValue: ph.costBasis, // will be updated by live price fetch
+            costBasis: ph.costBasis,
+          }));
+        } else {
+          const existing = [...p.holdings];
+          for (const ph of parsed) {
+            const match = existing.find(h => h.ticker?.toUpperCase() === ph.ticker.toUpperCase());
+            if (match) {
+              match.units = (match.units ?? 0) + ph.units;
+              match.costBasis = (match.costBasis ?? 0) + ph.costBasis;
+            } else {
+              existing.push({
+                id: uid(),
+                name: ph.name,
+                ticker: ph.ticker,
+                units: ph.units,
+                currentPrice: undefined,
+                currentValue: ph.costBasis,
+                costBasis: ph.costBasis,
+              });
+            }
+          }
+          holdings = existing;
+        }
+        const totalVal = holdings.reduce((s, h) => s + h.currentValue, 0);
+        const snapshots = [
+          ...p.snapshots.filter(s => s.date !== new Date().toISOString().slice(0, 10)),
+          { date: new Date().toISOString().slice(0, 10), totalValue: totalVal },
+        ].sort((a, b) => a.date.localeCompare(b.date));
+        return { ...p, holdings, snapshots, lastCsvImport: new Date().toISOString() };
+      }),
+    });
+  }
+
   function deleteHolding(providerId: string, holdingId: string) {
     onChange({
       ...data,
@@ -122,23 +174,14 @@ export default function ISATracker({ data, onChange }: Props) {
     });
   }
 
-  function updateContribution(amount: number) {
-    const ty = currentTaxYear();
-    const existing = data.contributions.find(c => c.taxYear === ty);
-    const contributions = existing
-      ? data.contributions.map(c => c.taxYear === ty ? { ...c, amount } : c)
-      : [...data.contributions, { taxYear: ty, amount }];
-    onChange({ ...data, contributions });
-  }
-
   return (
     <div className="space-y-6">
       {/* Summary cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <SummaryCard label="Total Portfolio" value={formatCurrency(totalValue)} />
+        <SummaryCard label="Total Portfolio" value={fmt(totalValue)} />
         <SummaryCard
           label="Total Gain/Loss"
-          value={formatCurrency(totalGain)}
+          value={fmt(totalGain)}
           sub={totalCostBasis > 0 ? `${totalGain >= 0 ? '+' : ''}${totalGainPct.toFixed(1)}%` : undefined}
           positive={totalGain >= 0}
           colored
@@ -149,53 +192,23 @@ export default function ISATracker({ data, onChange }: Props) {
 
       {/* Portfolio income snapshot */}
       {totalValue > 0 && (
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-2xl border border-emerald-100 p-5 shadow-sm">
             <p className="text-sm font-medium text-emerald-700">{(data.fireSettings?.withdrawalRate ?? 4).toFixed(1)}% Rule — safe annual withdrawal</p>
-            <p className="text-3xl font-bold text-emerald-800 mt-2">{formatCurrency(totalValue * (data.fireSettings?.withdrawalRate ?? 4) / 100)}</p>
+            <p className="text-3xl font-bold text-emerald-800 mt-2">{fmt(totalValue * (data.fireSettings?.withdrawalRate ?? 4) / 100)}</p>
             <p className="text-xs text-emerald-600 mt-1">Withdraw this each year indefinitely (Trinity Study)</p>
           </div>
           <div className="bg-gradient-to-br from-indigo-50 to-violet-50 rounded-2xl border border-indigo-100 p-5 shadow-sm">
             <p className="text-sm font-medium text-indigo-700">8% return — estimated annual earnings</p>
-            <p className="text-3xl font-bold text-indigo-800 mt-2">{formatCurrency(totalValue * 0.08)}</p>
-            <p className="text-xs text-indigo-600 mt-1">At 8% growth rate · {formatCurrency(totalValue * 0.08 / 12)}/mo</p>
+            <p className="text-3xl font-bold text-indigo-800 mt-2">{fmt(totalValue * 0.08)}</p>
+            <p className="text-xs text-indigo-600 mt-1">At 8% growth rate · {fmt(totalValue * 0.08 / 12)}/mo</p>
           </div>
         </div>
       )}
 
-      {/* ISA Allowance */}
-      <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm">
-        <div className="flex items-center justify-between mb-3">
-          <div>
-            <h3 className="font-semibold text-gray-900">
-              ISA Allowance {currentTaxYear()}/{String(currentTaxYear() + 1).slice(2)}
-            </h3>
-            <p className="text-sm text-gray-500 mt-0.5">
-              {formatCurrency(currentContrib)} of {formatCurrency(ISA_ALLOWANCE)} used
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-500">Contributions:</span>
-            <input
-              type="number"
-              className="w-28 border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-right focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              value={currentContrib}
-              min={0}
-              max={ISA_ALLOWANCE}
-              onChange={e => updateContribution(Number(e.target.value))}
-            />
-          </div>
-        </div>
-        <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
-          <div
-            className={`h-full rounded-full transition-all ${allowanceUsedPct >= 100 ? 'bg-red-500' : allowanceUsedPct >= 80 ? 'bg-amber-500' : 'bg-indigo-500'}`}
-            style={{ width: `${allowanceUsedPct}%` }}
-          />
-        </div>
-        <p className="text-xs text-gray-400 mt-1.5 text-right">
-          {formatCurrency(ISA_ALLOWANCE - currentContrib)} remaining
-        </p>
-      </div>
+
+      {/* Allocation charts */}
+      {totalValue > 0 && <AllocationCharts data={data} />}
 
       {/* Performance chart */}
       {data.providers.some(p => p.snapshots.length > 1) && (
@@ -203,14 +216,24 @@ export default function ISATracker({ data, onChange }: Props) {
       )}
 
       {/* Providers */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="font-semibold text-gray-900 text-lg">Providers</h3>
-        <button
-          onClick={() => setShowAddProvider(true)}
-          className="flex items-center gap-1.5 bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-indigo-700 transition-colors"
-        >
-          <Plus size={16} /> Add Provider
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setShowCSVImport(true)}
+            className="flex items-center gap-1.5 border border-gray-200 text-gray-600 px-3 py-2 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors"
+          >
+            <Upload size={16} />
+            <span className="hidden sm:inline">Import CSV</span>
+          </button>
+          <button
+            onClick={() => setShowAddProvider(true)}
+            className="flex items-center gap-1.5 bg-indigo-600 text-white px-3 py-2 rounded-xl text-sm font-medium hover:bg-indigo-700 transition-colors"
+          >
+            <Plus size={16} />
+            <span className="hidden sm:inline">Add Provider</span>
+          </button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -272,14 +295,21 @@ export default function ISATracker({ data, onChange }: Props) {
                     <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700">{provider.accountType}</span>
                   )}
                 </div>
-                <span className="text-sm text-gray-500">{provider.holdings.length} holdings</span>
+                <span className="text-sm text-gray-500">
+                  {provider.holdings.length} holdings
+                  {provider.lastCsvImport && (
+                    <span className="ml-2 text-xs text-gray-400" title={`CSV imported on ${new Date(provider.lastCsvImport).toLocaleString()}`}>
+                      · CSV imported {new Date(provider.lastCsvImport).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    </span>
+                  )}
+                </span>
               </div>
               <div className="text-right mr-2">
-                <div className="font-semibold text-gray-900">{formatCurrency(providerTotal)}</div>
+                <div className="font-semibold text-gray-900">{fmt(providerTotal)}</div>
                 {providerCost > 0 && (
                   <div className={`text-xs flex items-center justify-end gap-1 ${gain >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
                     {gain >= 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
-                    {gain >= 0 ? '+' : ''}{formatCurrency(gain)} ({gainPct.toFixed(1)}%)
+                    {gain >= 0 ? '+' : ''}{fmt(gain)} ({gainPct.toFixed(1)}%)
                   </div>
                 )}
               </div>
@@ -331,6 +361,12 @@ export default function ISATracker({ data, onChange }: Props) {
                           {provider.holdings.map(h => {
                             const hGain = h.costBasis != null ? h.currentValue - h.costBasis : null;
                             const hGainPct = h.costBasis ? (hGain! / h.costBasis) * 100 : null;
+                            const hCurrency = h.currency ?? userCurrency;
+                            const showNative = hCurrency !== userCurrency && Object.keys(fxRates).length > 0;
+                            function toNative(val: number) {
+                              return convertAmount(val, userCurrency, hCurrency, fxRates);
+                            }
+                            const nativeSym = getCurrencySymbol(hCurrency);
                             return (
                               <tr key={h.id} className="group">
                                 <td className="py-2 pr-4">
@@ -338,13 +374,28 @@ export default function ISATracker({ data, onChange }: Props) {
                                   {h.ticker && <div className="text-xs text-gray-400">{h.ticker}</div>}
                                 </td>
                                 <td className="py-2 text-right text-gray-600">{h.units?.toFixed(4) ?? '—'}</td>
-                                <td className="py-2 text-right text-gray-600">{h.currentPrice ? formatCurrency(h.currentPrice) : '—'}</td>
-                                <td className="py-2 text-right font-medium text-gray-900">{formatCurrency(h.currentValue)}</td>
-                                <td className="py-2 text-right text-gray-500">{h.costBasis != null ? formatCurrency(h.costBasis) : '—'}</td>
+                                <td className="py-2 text-right text-gray-600">
+                                  {h.currentPrice ? fmt(h.currentPrice) : '—'}
+                                  {showNative && h.currentPrice != null && (
+                                    <div className="text-xs text-gray-400">{nativeSym}{toNative(h.currentPrice).toFixed(2)}</div>
+                                  )}
+                                </td>
+                                <td className="py-2 text-right font-medium text-gray-900">
+                                  {fmt(h.currentValue)}
+                                  {showNative && (
+                                    <div className="text-xs text-gray-400">{nativeSym}{toNative(h.currentValue).toFixed(2)}</div>
+                                  )}
+                                </td>
+                                <td className="py-2 text-right text-gray-500">
+                                  {h.costBasis != null ? fmt(h.costBasis) : '—'}
+                                  {showNative && h.costBasis != null && (
+                                    <div className="text-xs text-gray-400">{nativeSym}{toNative(h.costBasis).toFixed(2)}</div>
+                                  )}
+                                </td>
                                 <td className="py-2 text-right">
                                   {hGain != null ? (
                                     <span className={hGain >= 0 ? 'text-emerald-600' : 'text-red-500'}>
-                                      {hGain >= 0 ? '+' : ''}{formatCurrency(hGain)}
+                                      {hGain >= 0 ? '+' : ''}{fmt(hGain)}
                                       {hGainPct != null && <span className="text-xs ml-1">({hGainPct.toFixed(1)}%)</span>}
                                     </span>
                                   ) : '—'}
@@ -394,7 +445,7 @@ export default function ISATracker({ data, onChange }: Props) {
                       <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: p.color }} />
                       {p.name}
                     </span>
-                    <span className="text-gray-600">{formatCurrency(val)} <span className="text-gray-400">({pct.toFixed(1)}%)</span></span>
+                    <span className="text-gray-600">{fmt(val)} <span className="text-gray-400">({pct.toFixed(1)}%)</span></span>
                   </div>
                   <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
                     <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: p.color }} />
@@ -418,6 +469,15 @@ export default function ISATracker({ data, onChange }: Props) {
         />
       )}
 
+      {/* CSV Import Modal */}
+      {showCSVImport && (
+        <CSVImportModal
+          providers={data.providers}
+          onClose={() => setShowCSVImport(false)}
+          onImport={(providerId, parsed, mergeMode) => handleCSVImport(providerId, parsed, mergeMode)}
+        />
+      )}
+
       {/* Add/Edit Provider Modal */}
       {(showAddProvider || editProvider) && (
         <ProviderModal
@@ -433,6 +493,7 @@ export default function ISATracker({ data, onChange }: Props) {
         <HoldingModal
           onSave={form => saveHolding(showAddHolding, form)}
           onClose={() => setShowAddHolding(null)}
+          livePrices={livePrices}
         />
       )}
       {editHolding && (
@@ -440,6 +501,7 @@ export default function ISATracker({ data, onChange }: Props) {
           existing={editHolding.holding}
           onSave={form => saveHolding(editHolding.providerId, form, editHolding.holding)}
           onClose={() => setEditHolding(null)}
+          livePrices={livePrices}
         />
       )}
     </div>
@@ -527,21 +589,82 @@ function ProviderModal({ existing, usedColors, onSave, onClose }: {
   );
 }
 
-function HoldingModal({ existing, onSave, onClose }: {
+function HoldingModal({ existing, onSave, onClose, livePrices = {} }: {
   existing?: Holding;
   onSave: (form: Omit<Holding, 'id'>) => void;
   onClose: () => void;
+  livePrices?: Record<string, number>;
 }) {
   const [name, setName] = useState(existing?.name ?? '');
   const [ticker, setTicker] = useState(existing?.ticker ?? '');
+  const [nativeCurrency, setNativeCurrency] = useState(existing?.currency ?? 'GBP');
   const [units, setUnits] = useState(existing?.units?.toString() ?? '');
   const [currentPrice, setCurrentPrice] = useState(existing?.currentPrice?.toString() ?? '');
   const [currentValue, setCurrentValue] = useState(existing?.currentValue?.toString() ?? '');
-  const [costBasis, setCostBasis] = useState(existing?.costBasis?.toString() ?? '');
+  const avgCostDefault = existing?.costBasis != null && existing?.units
+    ? (existing.costBasis / existing.units).toFixed(4)
+    : '';
+  const [avgCostPerShare, setAvgCostPerShare] = useState(avgCostDefault);
+  const sym = getCurrencySymbol(nativeCurrency);
 
-  // Auto-calculate current value from units * price
-  const calcValue = units && currentPrice ? Number(units) * Number(currentPrice) : null;
-  const displayValue = calcValue != null ? calcValue.toFixed(2) : currentValue;
+  // Autocomplete state
+  const [searchQuery, setSearchQuery] = useState(
+    existing ? (existing.ticker ? `${existing.ticker} – ${existing.name}` : existing.name) : ''
+  );
+  const [searchResults, setSearchResults] = useState<import('../lib/firebasePrices').StockResult[]>([]);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [stockSelected, setStockSelected] = useState(!!existing);
+
+  const [fetchedPrice, setFetchedPrice] = useState<number | undefined>(
+    existing?.ticker ? livePrices[existing.ticker] : undefined
+  );
+  const [fetchingPrice, setFetchingPrice] = useState(false);
+
+  // Search as user types
+  useEffect(() => {
+    if (stockSelected) return;
+    const q = searchQuery.trim();
+    if (!q) { setSearchResults([]); setShowDropdown(false); return; }
+    const timer = setTimeout(async () => {
+      const results = await searchStocks(q);
+      setSearchResults(results);
+      setShowDropdown(results.length > 0);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [searchQuery, stockSelected]);
+
+  // Fetch live price + currency when ticker is set
+  useEffect(() => {
+    const t = ticker.trim().toUpperCase();
+    if (!t) { setFetchedPrice(undefined); return; }
+    if (livePrices[t] !== undefined) { setFetchedPrice(livePrices[t]); return; }
+    const timer = setTimeout(async () => {
+      setFetchingPrice(true);
+      try {
+        const info = await fetchTickerInfo(t);
+        if (info) {
+          setFetchedPrice(info.price);
+          if (info.currency) setNativeCurrency(info.currency === 'GBp' ? 'GBP' : info.currency);
+        }
+      } finally {
+        setFetchingPrice(false);
+      }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [ticker, livePrices]);
+
+  function selectStock(stock: import('../lib/firebasePrices').StockResult) {
+    setName(stock.name);
+    setTicker(stock.symbol);
+    setSearchQuery(`${stock.symbol} – ${stock.name}`);
+    if (stock.currency) setNativeCurrency(stock.currency === 'GBp' ? 'GBP' : stock.currency);
+    setShowDropdown(false);
+    setStockSelected(true);
+  }
+
+  const livePrice = fetchedPrice;
+  const effectivePrice = livePrice ?? (currentPrice ? Number(currentPrice) : null);
+  const calcValue = units && effectivePrice != null ? Number(units) * effectivePrice : null;
 
   function handleSubmit() {
     const cv = calcValue ?? Number(currentValue);
@@ -550,9 +673,10 @@ function HoldingModal({ existing, onSave, onClose }: {
       name: name.trim(),
       ticker: ticker.trim() || undefined,
       units: units ? Number(units) : undefined,
-      currentPrice: currentPrice ? Number(currentPrice) : undefined,
+      currentPrice: effectivePrice ?? undefined,
       currentValue: cv,
-      costBasis: costBasis ? Number(costBasis) : undefined,
+      costBasis: avgCostPerShare && units ? Number(avgCostPerShare) * Number(units) : undefined,
+      currency: nativeCurrency,
     });
   }
 
@@ -560,37 +684,77 @@ function HoldingModal({ existing, onSave, onClose }: {
     <Modal title={existing ? 'Edit Holding' : 'Add Holding'} onClose={onClose}>
       <div className="space-y-4">
         <div className="grid grid-cols-2 gap-4">
-          <div className="col-span-2">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
-            <input autoFocus className="w-full border border-gray-200 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="e.g. FTSE Global All Cap" value={name} onChange={e => setName(e.target.value)} />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Ticker</label>
-            <input className="w-full border border-gray-200 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="e.g. AAPL" value={ticker} onChange={e => setTicker(e.target.value)} />
+          <div className="col-span-2 relative">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Stock / Fund *</label>
+            <input
+              autoFocus
+              className="w-full border border-gray-200 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              placeholder="Search by name or ticker (e.g. Apple, AAPL)"
+              value={searchQuery}
+              onChange={e => { setSearchQuery(e.target.value); setStockSelected(false); setName(e.target.value); setTicker(''); }}
+              onFocus={() => { if (searchResults.length > 0) setShowDropdown(true); }}
+              onBlur={() => setTimeout(() => setShowDropdown(false), 150)}
+            />
+            {showDropdown && (
+              <ul className="absolute z-50 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
+                {searchResults.map(stock => (
+                  <li
+                    key={stock.symbol}
+                    className="flex items-center justify-between px-4 py-2.5 hover:bg-indigo-50 cursor-pointer text-sm"
+                    onMouseDown={() => selectStock(stock)}
+                  >
+                    <span className="font-medium text-gray-900">{stock.name}</span>
+                    <span className="text-gray-400 ml-3 font-mono text-xs">{stock.symbol}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Units held</label>
             <input type="number" min="0" className="w-full border border-gray-200 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="0.0000" value={units} onChange={e => setUnits(e.target.value)} />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Current price (£)</label>
-            <input type="number" min="0" className="w-full border border-gray-200 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="0.00" value={currentPrice} onChange={e => setCurrentPrice(e.target.value)} />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Current value (£) *</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-2">
+              Current price ({sym})
+              <span className="text-xs text-gray-400 font-normal bg-gray-100 rounded-full px-2 py-0.5">{nativeCurrency}</span>
+              {fetchingPrice && <span className="text-xs text-gray-400 animate-pulse">fetching…</span>}
+              {!fetchingPrice && livePrice != null && (
+                <span className="text-xs font-medium text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-0.5">live</span>
+              )}
+            </label>
             <input
               type="number" min="0"
-              className="w-full border border-gray-200 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-gray-50 disabled:text-gray-500"
-              placeholder="Auto-calculated or enter manually"
-              value={displayValue}
-              disabled={calcValue != null}
-              onChange={e => setCurrentValue(e.target.value)}
+              className="w-full border border-gray-200 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-gray-50 disabled:text-gray-400"
+              placeholder="0.00"
+              value={livePrice != null ? livePrice.toString() : currentPrice}
+              disabled={livePrice != null}
+              onChange={e => setCurrentPrice(e.target.value)}
             />
-            {calcValue != null && <p className="text-xs text-gray-400 mt-1">Auto-calculated from units × price</p>}
+            {livePrice != null && <p className="text-xs text-emerald-600 mt-1">Live price from Firebase</p>}
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Cost basis (£)</label>
-            <input type="number" min="0" className="w-full border border-gray-200 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Total amount invested" value={costBasis} onChange={e => setCostBasis(e.target.value)} />
+            <label className="block text-sm font-medium text-gray-700 mb-1">Current value ({sym}) *</label>
+            {calcValue != null ? (
+              <div className="w-full border border-gray-200 rounded-xl px-4 py-2.5 bg-gray-50 text-gray-700">
+                {sym}{calcValue.toFixed(2)}
+                <span className="text-xs text-gray-400 ml-2">
+                  {livePrice != null ? 'units × live price' : 'units × price'}
+                </span>
+              </div>
+            ) : (
+              <input
+                type="number" min="0"
+                className="w-full border border-gray-200 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                placeholder="Enter manually"
+                value={currentValue}
+                onChange={e => setCurrentValue(e.target.value)}
+              />
+            )}
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Avg price paid per share ({sym})</label>
+            <input type="number" min="0" className="w-full border border-gray-200 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="0.00" value={avgCostPerShare} onChange={e => setAvgCostPerShare(e.target.value)} />
           </div>
         </div>
         <div className="flex gap-3 pt-2">
