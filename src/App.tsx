@@ -36,6 +36,7 @@ export default function App() {
   const [fundHoldings, setFundHoldings] = useState<UploadedFundHoldings[]>([]);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const baseData = useRef<AppData>(defaultData);
+  const loadedForUser = useRef<string | null>(null);
   const livePricesRef = useRef<Record<string, number>>({});
   const fxRatesRef = useRef<FxRates>({ GBP: 1 });
 
@@ -47,11 +48,16 @@ export default function App() {
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-      if (!session) {
-        setData(defaultData);
-        setDataReady(false);
-      }
+      const newUser = session?.user ?? null;
+      setUser(prev => {
+        // Only update if the user actually changed (prevents TOKEN_REFRESHED from reloading data)
+        if (prev?.id === newUser?.id) return prev;
+        if (!newUser) {
+          setData(defaultData);
+          setDataReady(false);
+        }
+        return newUser;
+      });
     });
 
     return () => subscription.unsubscribe();
@@ -91,9 +97,11 @@ export default function App() {
     };
   }
 
-  // Load user data + shared fund holdings when user signs in
+  // Load user data + shared fund holdings when user signs in (guard against Supabase token refresh re-triggering)
   useEffect(() => {
-    if (!user) return;
+    if (!user) { loadedForUser.current = null; return; }
+    if (loadedForUser.current === user.id) return;
+    loadedForUser.current = user.id;
     setDataReady(false);
     setSyncState('syncing');
     Promise.all([loadFromSupabase(), loadFundHoldings()])
