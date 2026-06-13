@@ -33,9 +33,14 @@ function CustomTooltip({ active, payload, fmt }: { active?: boolean; payload?: {
 export default function AllocationCharts({ data }: Props) {
   const { fmt } = useCurrency();
 
+  const nameCounts = data.providers.reduce<Record<string, number>>((acc, p) => {
+    acc[p.name] = (acc[p.name] ?? 0) + 1;
+    return acc;
+  }, {});
+
   const providerData = data.providers
     .map(p => ({
-      name: p.name,
+      name: nameCounts[p.name] > 1 && p.accountType ? `${p.name} (${p.accountType})` : p.name,
       value: p.holdings.reduce((s, h) => s + h.currentValue, 0),
       color: p.color || PROVIDER_COLORS[0],
     }))
