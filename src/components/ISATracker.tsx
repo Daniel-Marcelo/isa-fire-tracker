@@ -464,15 +464,21 @@ const owners = ['All', ...OWNERS] as const;
         <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm">
           <h3 className="font-semibold text-gray-900 mb-4">Portfolio Allocation</h3>
           <div className="space-y-3">
-            {visibleProviders.map(p => {
+            {(() => {
+              const nameCounts = visibleProviders.reduce<Record<string, number>>((acc, p) => {
+                acc[p.name] = (acc[p.name] ?? 0) + 1;
+                return acc;
+              }, {});
+              return visibleProviders.map(p => {
               const val = p.holdings.reduce((s, h) => s + h.currentValue, 0);
               const pct = totalValue > 0 ? (val / totalValue) * 100 : 0;
+              const label = nameCounts[p.name] > 1 && p.accountType ? `${p.name} (${p.accountType})` : p.name;
               return (
                 <div key={p.id}>
                   <div className="flex justify-between text-sm mb-1">
                     <span className="flex items-center gap-2">
                       <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: p.color }} />
-                      {p.name}
+                      {label}
                     </span>
                     <span className="text-gray-600">{fmt(val)} <span className="text-gray-400">({pct.toFixed(1)}%)</span></span>
                   </div>
@@ -481,7 +487,7 @@ const owners = ['All', ...OWNERS] as const;
                   </div>
                 </div>
               );
-            })}
+            });})()}
           </div>
         </div>
       )}
