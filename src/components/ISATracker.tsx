@@ -551,7 +551,7 @@ function SummaryCard({ label, value, sub, positive, colored }: {
   );
 }
 
-const ACCOUNT_TYPES: AccountType[] = ['ISA', 'SIPP', 'GIA', 'Workplace Pension', 'Other'];
+const ACCOUNT_TYPES: AccountType[] = ['ISA', 'SIPP', 'GIA', 'Workplace Pension'];
 const OWNERS = ['Daniel', 'Camilla'] as const;
 type Owner = typeof OWNERS[number];
 

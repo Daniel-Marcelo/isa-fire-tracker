@@ -131,7 +131,7 @@ function project(
   return { points, earlyFireAge, fullFireAge };
 }
 
-const ACCESSIBLE_TYPES = new Set(['ISA', 'GIA', 'Other']);
+const ACCESSIBLE_TYPES = new Set(['ISA', 'GIA']);
 const PENSION_TYPES = new Set(['SIPP', 'Workplace Pension']);
 
 export default function FIRECalculator({ data, onChange }: Props) {

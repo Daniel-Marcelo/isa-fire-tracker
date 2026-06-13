@@ -9,7 +9,7 @@ export interface Holding {
   currency?: string; // ISO 4217 code for the price/value denomination, default 'GBP'
 }
 
-export type AccountType = 'ISA' | 'SIPP' | 'GIA' | 'Workplace Pension' | 'Other';
+export type AccountType = 'ISA' | 'SIPP' | 'GIA' | 'Workplace Pension';
 
 export interface Provider {
   id: string;
