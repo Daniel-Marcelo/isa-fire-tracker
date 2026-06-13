@@ -191,20 +191,49 @@ const owners = ['All', ...OWNERS] as const;
       </div>
 
       {/* Portfolio income snapshot */}
-      {totalValue > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-2xl border border-emerald-100 p-5 shadow-sm">
-            <p className="text-sm font-medium text-emerald-700">{(data.fireSettings?.withdrawalRate ?? 4).toFixed(1)}% Rule — safe annual withdrawal</p>
-            <p className="text-3xl font-bold text-emerald-800 mt-2">{fmt(totalValue * (data.fireSettings?.withdrawalRate ?? 4) / 100)}</p>
-            <p className="text-xs text-emerald-600 mt-1">Withdraw this each year indefinitely (Trinity Study)</p>
+      {totalValue > 0 && (() => {
+        const PENSION_TYPES = new Set<string>(['SIPP', 'Workplace Pension']);
+        const pensionValue = data.providers
+          .filter(p => PENSION_TYPES.has(p.accountType ?? ''))
+          .reduce((s, p) => s + p.holdings.reduce((h, holding) => h + holding.currentValue, 0), 0);
+        const accessibleValue = totalValue - pensionValue;
+        const swr = (data.fireSettings?.withdrawalRate ?? 4) / 100;
+
+        return (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-2xl border border-emerald-100 p-5 shadow-sm">
+              <p className="text-sm font-medium text-emerald-700">{(swr * 100).toFixed(1)}% Rule — safe annual withdrawal</p>
+              <p className="text-3xl font-bold text-emerald-800 mt-2">{fmt(totalValue * swr)}</p>
+              <p className="text-xs text-emerald-600 mt-1">Withdraw this each year indefinitely (Trinity Study)</p>
+              <div className="mt-3 pt-3 border-t border-emerald-100 grid grid-cols-2 gap-2">
+                <div>
+                  <p className="text-xs text-emerald-600">ISA / GIA</p>
+                  <p className="text-sm font-semibold text-emerald-800">{fmt(accessibleValue * swr)}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-emerald-600">Pension / SIPP</p>
+                  <p className="text-sm font-semibold text-emerald-800">{fmt(pensionValue * swr)}</p>
+                </div>
+              </div>
+            </div>
+            <div className="bg-gradient-to-br from-indigo-50 to-violet-50 rounded-2xl border border-indigo-100 p-5 shadow-sm">
+              <p className="text-sm font-medium text-indigo-700">8% return — estimated annual earnings</p>
+              <p className="text-3xl font-bold text-indigo-800 mt-2">{fmt(totalValue * 0.08)}</p>
+              <p className="text-xs text-indigo-600 mt-1">At 8% growth rate · {fmt(totalValue * 0.08 / 12)}/mo</p>
+              <div className="mt-3 pt-3 border-t border-indigo-100 grid grid-cols-2 gap-2">
+                <div>
+                  <p className="text-xs text-indigo-600">ISA / GIA</p>
+                  <p className="text-sm font-semibold text-indigo-800">{fmt(accessibleValue * 0.08)}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-indigo-600">Pension / SIPP</p>
+                  <p className="text-sm font-semibold text-indigo-800">{fmt(pensionValue * 0.08)}</p>
+                </div>
+              </div>
+            </div>
           </div>
-          <div className="bg-gradient-to-br from-indigo-50 to-violet-50 rounded-2xl border border-indigo-100 p-5 shadow-sm">
-            <p className="text-sm font-medium text-indigo-700">8% return — estimated annual earnings</p>
-            <p className="text-3xl font-bold text-indigo-800 mt-2">{fmt(totalValue * 0.08)}</p>
-            <p className="text-xs text-indigo-600 mt-1">At 8% growth rate · {fmt(totalValue * 0.08 / 12)}/mo</p>
-          </div>
-        </div>
-      )}
+        );
+      })()}
 
 
       {/* Allocation charts */}
