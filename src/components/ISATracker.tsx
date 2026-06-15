@@ -177,18 +177,27 @@ const owners = ['All', ...OWNERS] as const;
   return (
     <div className="space-y-6">
       {/* Summary cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <SummaryCard label="Total Portfolio" value={fmt(totalValue)} />
-        <SummaryCard
-          label="Total Gain/Loss"
-          value={fmt(totalGain)}
-          sub={totalCostBasis > 0 ? `${totalGain >= 0 ? '+' : ''}${totalGainPct.toFixed(1)}%` : undefined}
-          positive={totalGain >= 0}
-          colored
-        />
-        <SummaryCard label="Providers" value={String(data.providers.length)} />
-        <SummaryCard label="Holdings" value={String(data.providers.reduce((s, p) => s + p.holdings.length, 0))} />
-      </div>
+      {(() => {
+        const PENSION_TYPES = new Set<string>(['SIPP', 'Workplace Pension']);
+        const pensionTotal = data.providers
+          .filter(p => PENSION_TYPES.has(p.accountType ?? ''))
+          .reduce((s, p) => s + p.holdings.reduce((h, holding) => h + holding.currentValue, 0), 0);
+        const accessibleTotal = totalValue - pensionTotal;
+        return (
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <SummaryCard label="Total Portfolio" value={fmt(totalValue)} />
+            <SummaryCard
+              label="Total Gain/Loss"
+              value={fmt(totalGain)}
+              sub={totalCostBasis > 0 ? `${totalGain >= 0 ? '+' : ''}${totalGainPct.toFixed(1)}%` : undefined}
+              positive={totalGain >= 0}
+              colored
+            />
+            <SummaryCard label="ISA / GIA" value={fmt(accessibleTotal)} sub={totalValue > 0 ? `${((accessibleTotal / totalValue) * 100).toFixed(1)}% of portfolio` : undefined} />
+            <SummaryCard label="Pension / SIPP" value={fmt(pensionTotal)} sub={totalValue > 0 ? `${((pensionTotal / totalValue) * 100).toFixed(1)}% of portfolio` : undefined} />
+          </div>
+        );
+      })()}
 
       {/* Portfolio income snapshot */}
       {totalValue > 0 && (() => {
