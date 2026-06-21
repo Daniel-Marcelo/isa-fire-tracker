@@ -335,8 +335,39 @@ const owners = ['All', ...OWNERS] as const;
 
         return (
           <div key={provider.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+            {/* Mobile header */}
             <div
-              className="flex items-center gap-3 p-5 cursor-pointer hover:bg-gray-50 transition-colors"
+              className="sm:hidden flex flex-col p-4 cursor-pointer hover:bg-gray-50 transition-colors"
+              onClick={() => toggleExpand(provider.id)}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: provider.color }} />
+                  <span className="font-semibold text-gray-900 truncate">{provider.name}</span>
+                </div>
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  <span className="font-semibold text-gray-900">{fmtShort(providerTotal)}</span>
+                  {expanded ? <ChevronDown size={16} className="text-gray-400 ml-1" /> : <ChevronRight size={16} className="text-gray-400 ml-1" />}
+                </div>
+              </div>
+              <div className="flex items-center justify-between mt-2 ml-4">
+                <div className="flex items-center gap-1.5">
+                  {provider.owner && <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">{provider.owner}</span>}
+                  {provider.accountType && <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700">{provider.accountType}</span>}
+                  <span className="text-xs text-gray-400">{provider.holdings.length} holdings</span>
+                </div>
+                {providerCost > 0 && (
+                  <div className={`text-xs flex items-center gap-1 ${gain >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                    {gain >= 0 ? <TrendingUp size={11} /> : <TrendingDown size={11} />}
+                    {gain >= 0 ? '+' : ''}{fmtShort(gain)} ({gainPct.toFixed(1)}%)
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Desktop header */}
+            <div
+              className="hidden sm:flex items-center gap-3 p-5 cursor-pointer hover:bg-gray-50 transition-colors"
               onClick={() => toggleExpand(provider.id)}
             >
               <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: provider.color }} />
@@ -388,10 +419,24 @@ const owners = ['All', ...OWNERS] as const;
             {expanded && (
               <div className="border-t border-gray-100">
                 <div className="p-4">
-                  <div className="flex justify-end mb-3">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-1 sm:hidden">
+                      <button
+                        onClick={e => { e.stopPropagation(); setEditProvider(provider); }}
+                        className="p-1.5 text-gray-400 hover:text-indigo-600 transition-colors"
+                      >
+                        <Pencil size={14} />
+                      </button>
+                      <button
+                        onClick={e => { e.stopPropagation(); deleteProvider(provider.id); }}
+                        className="p-1.5 text-gray-400 hover:text-red-500 transition-colors"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
                     <button
                       onClick={() => setShowAddHolding(provider.id)}
-                      className="flex items-center gap-1 text-indigo-600 hover:text-indigo-800 text-sm font-medium transition-colors"
+                      className="flex items-center gap-1 text-indigo-600 hover:text-indigo-800 text-sm font-medium transition-colors ml-auto"
                     >
                       <Plus size={14} /> Add Holding
                     </button>
