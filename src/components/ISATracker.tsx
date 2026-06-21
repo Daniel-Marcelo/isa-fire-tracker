@@ -36,7 +36,7 @@ export default function ISATracker({ data, onChange, livePrices = {}, fxRates = 
   const [filterType, setFilterType] = useState<string>('All');
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [showCSVImport, setShowCSVImport] = useState(false);
-  const { fmt, currency: userCurrency } = useCurrency();
+  const { fmt, fmtShort, currency: userCurrency } = useCurrency();
 
   const totalValue = data.providers.reduce(
     (sum, p) => sum + p.holdings.reduce((s, h) => s + h.currentValue, 0),
@@ -195,16 +195,17 @@ const owners = ['All', ...OWNERS] as const;
         const accessibleTotal = totalValue - pensionTotal;
         return (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <SummaryCard label="Total Portfolio" value={fmt(totalValue)} />
+            <SummaryCard label="Total Portfolio" value={fmtShort(totalValue)} fullValue={fmt(totalValue)} />
             <SummaryCard
               label="Total Gain/Loss"
-              value={fmt(totalGain)}
+              value={fmtShort(totalGain)}
+              fullValue={fmt(totalGain)}
               sub={totalCostBasis > 0 ? `${totalGain >= 0 ? '+' : ''}${totalGainPct.toFixed(1)}%` : undefined}
               positive={totalGain >= 0}
               colored
             />
-            <SummaryCard label="ISA / GIA" value={fmt(accessibleTotal)} sub={totalValue > 0 ? `${((accessibleTotal / totalValue) * 100).toFixed(1)}% of portfolio` : undefined} />
-            <SummaryCard label="Pension / SIPP" value={fmt(pensionTotal)} sub={totalValue > 0 ? `${((pensionTotal / totalValue) * 100).toFixed(1)}% of portfolio` : undefined} />
+            <SummaryCard label="ISA / GIA" value={fmtShort(accessibleTotal)} fullValue={fmt(accessibleTotal)} sub={totalValue > 0 ? `${((accessibleTotal / totalValue) * 100).toFixed(1)}% of portfolio` : undefined} />
+            <SummaryCard label="Pension / SIPP" value={fmtShort(pensionTotal)} fullValue={fmt(pensionTotal)} sub={totalValue > 0 ? `${((pensionTotal / totalValue) * 100).toFixed(1)}% of portfolio` : undefined} />
           </div>
         );
       })()}
@@ -222,31 +223,37 @@ const owners = ['All', ...OWNERS] as const;
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-2xl border border-emerald-100 p-5 shadow-sm">
               <p className="text-sm font-medium text-emerald-700">{(swr * 100).toFixed(1)}% Rule — safe annual withdrawal</p>
-              <p className="text-3xl font-bold text-emerald-800 mt-2">{fmt(totalValue * swr)}</p>
+              <p className="text-2xl sm:text-3xl font-bold text-emerald-800 mt-2">
+                <span className="sm:hidden">{fmtShort(totalValue * swr)}</span>
+                <span className="hidden sm:inline">{fmt(totalValue * swr)}</span>
+              </p>
               <p className="text-xs text-emerald-600 mt-1">Withdraw this each year indefinitely (Trinity Study)</p>
               <div className="mt-3 pt-3 border-t border-emerald-100 grid grid-cols-2 gap-2">
                 <div>
                   <p className="text-xs text-emerald-600">ISA / GIA</p>
-                  <p className="text-sm font-semibold text-emerald-800">{fmt(accessibleValue * swr)}</p>
+                  <p className="text-sm font-semibold text-emerald-800">{fmtShort(accessibleValue * swr)}</p>
                 </div>
                 <div>
                   <p className="text-xs text-emerald-600">Pension / SIPP</p>
-                  <p className="text-sm font-semibold text-emerald-800">{fmt(pensionValue * swr)}</p>
+                  <p className="text-sm font-semibold text-emerald-800">{fmtShort(pensionValue * swr)}</p>
                 </div>
               </div>
             </div>
             <div className="bg-gradient-to-br from-indigo-50 to-violet-50 rounded-2xl border border-indigo-100 p-5 shadow-sm">
               <p className="text-sm font-medium text-indigo-700">8% return — estimated annual earnings</p>
-              <p className="text-3xl font-bold text-indigo-800 mt-2">{fmt(totalValue * 0.08)}</p>
-              <p className="text-xs text-indigo-600 mt-1">At 8% growth rate · {fmt(totalValue * 0.08 / 12)}/mo</p>
+              <p className="text-2xl sm:text-3xl font-bold text-indigo-800 mt-2">
+                <span className="sm:hidden">{fmtShort(totalValue * 0.08)}</span>
+                <span className="hidden sm:inline">{fmt(totalValue * 0.08)}</span>
+              </p>
+              <p className="text-xs text-indigo-600 mt-1">At 8% growth rate · {fmtShort(totalValue * 0.08 / 12)}/mo</p>
               <div className="mt-3 pt-3 border-t border-indigo-100 grid grid-cols-2 gap-2">
                 <div>
                   <p className="text-xs text-indigo-600">ISA / GIA</p>
-                  <p className="text-sm font-semibold text-indigo-800">{fmt(accessibleValue * 0.08)}</p>
+                  <p className="text-sm font-semibold text-indigo-800">{fmtShort(accessibleValue * 0.08)}</p>
                 </div>
                 <div>
                   <p className="text-xs text-indigo-600">Pension / SIPP</p>
-                  <p className="text-sm font-semibold text-indigo-800">{fmt(pensionValue * 0.08)}</p>
+                  <p className="text-sm font-semibold text-indigo-800">{fmtShort(pensionValue * 0.08)}</p>
                 </div>
               </div>
             </div>
@@ -539,7 +546,11 @@ const owners = ['All', ...OWNERS] as const;
                         </span>
                       )}
                     </span>
-                    <span className="text-gray-600 shrink-0 ml-2">{fmt(val)} <span className="text-gray-400">({pct.toFixed(1)}%)</span></span>
+                    <span className="text-gray-600 shrink-0 ml-2">
+                      <span className="sm:hidden">{fmtShort(val)}</span>
+                      <span className="hidden sm:inline">{fmt(val)}</span>
+                      {' '}<span className="text-gray-400">({pct.toFixed(1)}%)</span>
+                    </span>
                   </div>
                   <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
                     <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: p.color }} />
@@ -602,16 +613,17 @@ const owners = ['All', ...OWNERS] as const;
   );
 }
 
-function SummaryCard({ label, value, sub, positive, colored }: {
-  label: string; value: string; sub?: string; positive?: boolean; colored?: boolean;
+function SummaryCard({ label, value, fullValue, sub, positive, colored }: {
+  label: string; value: string; fullValue?: string; sub?: string; positive?: boolean; colored?: boolean;
 }) {
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm">
-      <p className="text-sm text-gray-500">{label}</p>
-      <p className={`text-2xl font-bold mt-1 ${colored ? (positive ? 'text-emerald-600' : 'text-red-500') : 'text-gray-900'}`}>
-        {value}
+    <div className="bg-white rounded-2xl border border-gray-100 p-4 sm:p-5 shadow-sm">
+      <p className="text-xs sm:text-sm text-gray-500">{label}</p>
+      <p className={`text-xl sm:text-2xl font-bold mt-1 ${colored ? (positive ? 'text-emerald-600' : 'text-red-500') : 'text-gray-900'}`}>
+        <span className="sm:hidden">{value}</span>
+        <span className="hidden sm:inline">{fullValue ?? value}</span>
       </p>
-      {sub && <p className={`text-sm mt-0.5 ${positive === undefined ? 'text-gray-400' : positive ? 'text-emerald-600' : 'text-red-500'}`}>{sub}</p>}
+      {sub && <p className={`text-xs sm:text-sm mt-0.5 ${positive === undefined ? 'text-gray-400' : positive ? 'text-emerald-600' : 'text-red-500'}`}>{sub}</p>}
     </div>
   );
 }
