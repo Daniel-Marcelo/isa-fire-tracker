@@ -229,7 +229,6 @@ export default function App() {
                     <nav className="hidden sm:flex bg-gray-100 rounded-xl p-1 gap-1">
                       <TabLink to="/" icon={<BarChart3 size={15} />} label="ISA Portfolio" />
                       <TabLink to="/lookthrough" icon={<Layers size={15} />} label="Look-through" />
-                      {isAdmin && <TabLink to="/funds" icon={<FolderOpen size={15} />} label="Fund Holdings" />}
                       <TabLink to="/fire" icon={<Flame size={15} />} label="FIRE Calculator" />
                     </nav>
 
@@ -262,6 +261,7 @@ export default function App() {
                         onExport={() => exportData(data)}
                         onImport={handleImport}
                         onSignOut={() => supabase.auth.signOut()}
+                        isAdmin={isAdmin}
                       />
                     </div>
                   </div>
@@ -271,7 +271,6 @@ export default function App() {
                 <nav className="sm:hidden fixed bottom-0 inset-x-0 z-40 bg-white border-t border-gray-100 flex" style={{paddingBottom: 'env(safe-area-inset-bottom)'}}>
                   <BottomTabLink to="/" icon={<BarChart3 size={20} />} label="Portfolio" />
                   <BottomTabLink to="/lookthrough" icon={<Layers size={20} />} label="Look-through" />
-                  {isAdmin && <BottomTabLink to="/funds" icon={<FolderOpen size={20} />} label="Funds" />}
                   <BottomTabLink to="/fire" icon={<Flame size={20} />} label="FIRE" />
                 </nav>
 
@@ -345,9 +344,10 @@ interface UserMenuProps {
   onExport: () => void;
   onImport: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onSignOut: () => void;
+  isAdmin?: boolean;
 }
 
-function UserMenu({ email, currency, currencies, onCurrencyChange, onExport, onImport, onSignOut }: UserMenuProps) {
+function UserMenu({ email, currency, currencies, onCurrencyChange, onExport, onImport, onSignOut, isAdmin }: UserMenuProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -397,6 +397,16 @@ function UserMenu({ email, currency, currencies, onCurrencyChange, onExport, onI
 
           {/* Actions */}
           <div className="py-1">
+            {isAdmin && (
+              <NavLink
+                to="/funds"
+                onClick={() => setOpen(false)}
+                className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                <FolderOpen size={15} className="text-gray-400" />
+                Fund Holdings
+              </NavLink>
+            )}
             <button
               onClick={() => { onExport(); setOpen(false); }}
               className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
