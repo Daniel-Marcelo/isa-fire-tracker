@@ -342,15 +342,15 @@ const owners = ['All', ...OWNERS] as const;
             >
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2 min-w-0">
-                  <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: provider.color }} />
                   <span className="font-semibold text-gray-900 truncate">{provider.name}</span>
+                  <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: provider.color }} />
                 </div>
                 <div className="flex items-center gap-1 flex-shrink-0">
                   <span className="font-semibold text-gray-900">{fmtShort(providerTotal)}</span>
                   {expanded ? <ChevronDown size={16} className="text-gray-400 ml-1" /> : <ChevronRight size={16} className="text-gray-400 ml-1" />}
                 </div>
               </div>
-              <div className="flex items-center justify-between mt-2 ml-4">
+              <div className="flex items-center justify-between mt-2">
                 <div className="flex items-center gap-1.5">
                   {provider.owner && <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">{provider.owner}</span>}
                   {provider.accountType && <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700">{provider.accountType}</span>}
