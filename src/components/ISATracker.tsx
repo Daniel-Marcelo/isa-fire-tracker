@@ -13,6 +13,12 @@ import CSVImportModal from './CSVImportModal';
 import type { ParsedHolding } from '../lib/csvParsers';
 
 
+function vibrate(pattern: number | number[]) {
+  if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+    navigator.vibrate(pattern);
+  }
+}
+
 interface Props {
   data: AppData;
   onChange: (data: AppData) => void;
@@ -63,6 +69,7 @@ const owners = ['All', ...OWNERS] as const;
   }
 
   function saveProvider(form: { name: string; owner: string; accountType: AccountType; color: string }, existing?: Provider) {
+    vibrate([10, 50, 10]);
     if (existing) {
       onChange({
         ...data,
@@ -92,10 +99,12 @@ const owners = ['All', ...OWNERS] as const;
 
   function confirmDeleteProvider() {
     if (!confirmDeleteId) return;
+    vibrate([100]);
     onChange({ ...data, providers: data.providers.filter(p => p.id !== confirmDeleteId) });
   }
 
   function saveHolding(providerId: string, form: Omit<Holding, 'id'>, existing?: Holding) {
+    vibrate([10, 50, 10]);
     onChange({
       ...data,
       providers: data.providers.map(p => {
@@ -164,6 +173,7 @@ const owners = ['All', ...OWNERS] as const;
   }
 
   function deleteHolding(providerId: string, holdingId: string) {
+    vibrate([50]);
     onChange({
       ...data,
       providers: data.providers.map(p =>
@@ -176,6 +186,24 @@ const owners = ['All', ...OWNERS] as const;
 
   return (
     <div className="space-y-6">
+      {/* Sticky mobile header */}
+      <div className="md:hidden sticky top-0 z-10 -mx-4 px-4 py-3 bg-white border-b border-gray-100 shadow-sm flex items-center justify-between">
+        <div>
+          <p className="text-xs text-gray-400">Total Portfolio</p>
+          <p className="text-lg font-bold text-gray-900">{fmt(totalValue)}</p>
+        </div>
+        {totalCostBasis > 0 && (
+          <div className="text-right">
+            <p className={`text-sm font-semibold ${totalGain >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+              {totalGain >= 0 ? '+' : ''}{fmt(totalGain)}
+            </p>
+            <p className={`text-xs ${totalGain >= 0 ? 'text-emerald-500' : 'text-red-400'}`}>
+              {totalGain >= 0 ? '+' : ''}{totalGainPct.toFixed(2)}%
+            </p>
+          </div>
+        )}
+      </div>
+
       {/* Summary cards */}
       {(() => {
         const PENSION_TYPES = new Set<string>(['SIPP', 'Workplace Pension']);
@@ -434,12 +462,12 @@ const owners = ['All', ...OWNERS] as const;
                                   {hGain != null ? (
                                     <span className={hGain >= 0 ? 'text-emerald-600' : 'text-red-500'}>
                                       {hGain >= 0 ? '+' : ''}{fmt(hGain)}
-                                      {hGainPct != null && <span className="text-xs ml-1">({hGainPct.toFixed(1)}%)</span>}
+                                      {hGainPct != null && <span className="text-xs ml-1">({hGainPct.toFixed(2)}%)</span>}
                                     </span>
                                   ) : '—'}
                                 </td>
                                 <td className="py-2 text-right">
-                                  <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <div className="flex items-center justify-end gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                                     <button
                                       onClick={() => setEditHolding({ providerId: provider.id, holding: h })}
                                       className="p-1 text-gray-400 hover:text-indigo-600 transition-colors"
@@ -485,11 +513,13 @@ const owners = ['All', ...OWNERS] as const;
               return (
                 <div key={p.id}>
                   <div className="flex justify-between text-sm mb-1">
-                    <span className="flex items-center gap-2">
-                      <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: p.color }} />
+                    <span className="flex items-center gap-2 flex-wrap">
+                      <span className="w-2.5 h-2.5 rounded-full inline-block shrink-0" style={{ backgroundColor: p.color }} />
                       {label}
+                      {p.accountType && <span className="px-1.5 py-0.5 text-xs rounded-full bg-indigo-50 text-indigo-600 font-medium">{p.accountType}</span>}
+                      {p.owner && <span className="px-1.5 py-0.5 text-xs rounded-full bg-gray-100 text-gray-500 font-medium">{p.owner}</span>}
                     </span>
-                    <span className="text-gray-600">{fmt(val)} <span className="text-gray-400">({pct.toFixed(1)}%)</span></span>
+                    <span className="text-gray-600 shrink-0 ml-2">{fmt(val)} <span className="text-gray-400">({pct.toFixed(1)}%)</span></span>
                   </div>
                   <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
                     <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: p.color }} />
@@ -561,7 +591,7 @@ function SummaryCard({ label, value, sub, positive, colored }: {
       <p className={`text-2xl font-bold mt-1 ${colored ? (positive ? 'text-emerald-600' : 'text-red-500') : 'text-gray-900'}`}>
         {value}
       </p>
-      {sub && <p className={`text-sm mt-0.5 ${positive ? 'text-emerald-600' : 'text-red-500'}`}>{sub}</p>}
+      {sub && <p className={`text-sm mt-0.5 ${positive === undefined ? 'text-gray-400' : positive ? 'text-emerald-600' : 'text-red-500'}`}>{sub}</p>}
     </div>
   );
 }

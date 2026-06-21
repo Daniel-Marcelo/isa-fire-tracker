@@ -22,7 +22,7 @@ export default function PerformanceChart({ providers }: Props) {
         // Find most recent snapshot at or before this date
         const snap = [...p.snapshots].filter(s => s.date <= date).sort((a, b) => b.date.localeCompare(a.date))[0];
         if (snap) {
-          point[p.name] = snap.totalValue;
+          point[p.id] = snap.totalValue;
           total += snap.totalValue;
         }
       });
@@ -45,7 +45,7 @@ export default function PerformanceChart({ providers }: Props) {
           <Legend />
           <Line dataKey="Total" stroke="#6366f1" strokeWidth={2} dot={false} />
           {providers.map(p => (
-            <Line key={p.id} dataKey={p.name} stroke={p.color} strokeWidth={1.5} dot={false} strokeDasharray="4 2" />
+            <Line key={p.id} dataKey={p.id} name={p.name} stroke={p.color} strokeWidth={1.5} dot={false} strokeDasharray="4 2" />
           ))}
         </LineChart>
       </ResponsiveContainer>

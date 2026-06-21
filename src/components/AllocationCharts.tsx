@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { ChevronDown, ChevronRight } from 'lucide-react';
 import type { AppData } from '../types';
 import { useCurrency } from '../contexts/CurrencyContext';
 import { PROVIDER_COLORS } from '../utils';
@@ -20,6 +22,51 @@ const OWNER_COLOURS: Record<string, string> = {
   'Camilla': '#ec4899',
 };
 
+const BROKER_PATTERNS: { canonical: string; patterns: string[] }[] = [
+  { canonical: 'Vanguard',             patterns: ['vanguard'] },
+  { canonical: 'Trading 212',          patterns: ['trading 212', 't212', 't 212'] },
+  { canonical: 'Freetrade',            patterns: ['freetrade'] },
+  { canonical: 'Hargreaves Lansdown',  patterns: ['hargreaves', 'lansdown', 'h.l.', '\\bhl\\b'] },
+  { canonical: 'AJ Bell',              patterns: ['aj bell', 'ajbell', 'youinvest'] },
+  { canonical: 'Interactive Investor', patterns: ['interactive investor', '\\bii\\b'] },
+  { canonical: 'iWeb',                 patterns: ['iweb', 'i-web'] },
+  { canonical: 'Nutmeg',               patterns: ['nutmeg'] },
+  { canonical: 'Moneybox',             patterns: ['moneybox', 'money box'] },
+  { canonical: 'Bestinvest',           patterns: ['bestinvest', 'best invest'] },
+  { canonical: 'Charles Stanley',      patterns: ['charles stanley'] },
+  { canonical: 'Fidelity',             patterns: ['fidelity'] },
+  { canonical: 'HSBC',                 patterns: ['hsbc'] },
+  { canonical: 'Barclays',             patterns: ['barclays'] },
+  { canonical: 'Aviva',                patterns: ['aviva'] },
+  { canonical: 'Legal & General',      patterns: ['legal & general', 'legal and general', 'l&g', 'l & g'] },
+  { canonical: 'Scottish Widows',      patterns: ['scottish widows'] },
+  { canonical: 'Royal London',         patterns: ['royal london'] },
+  { canonical: 'Nest',                 patterns: ['\\bnest\\b'] },
+  { canonical: 'PensionBee',           patterns: ['pensionbee', 'pension bee'] },
+  { canonical: 'Revolut',              patterns: ['revolut'] },
+  { canonical: 'InvestEngine',         patterns: ['investengine', 'invest engine'] },
+  { canonical: 'Plum',                 patterns: ['\\bplum\\b'] },
+  { canonical: 'Chip',                 patterns: ['\\bchip\\b'] },
+  { canonical: 'eToro',                patterns: ['etoro', 'e-toro'] },
+  { canonical: 'Moneyfarm',            patterns: ['moneyfarm'] },
+  { canonical: 'Wealthify',            patterns: ['wealthify'] },
+  { canonical: 'Wealthsimple',         patterns: ['wealthsimple'] },
+  { canonical: 'Lightyear',            patterns: ['lightyear'] },
+  { canonical: 'Dodl',                 patterns: ['dodl'] },
+  { canonical: 'Saxo',                 patterns: ['saxo'] },
+  { canonical: 'InvestDirect',         patterns: ['investdirect', 'invest direct'] },
+  { canonical: 'Willis Owen',          patterns: ['willis owen'] },
+  { canonical: 'Cavendish',            patterns: ['cavendish'] },
+];
+
+function canonicalBroker(name: string): string {
+  const lower = name.toLowerCase();
+  for (const { canonical, patterns } of BROKER_PATTERNS) {
+    if (patterns.some(p => new RegExp(p, 'i').test(lower))) return canonical;
+  }
+  return name;
+}
+
 function CustomTooltip({ active, payload, fmt }: { active?: boolean; payload?: { name: string; value: number }[]; fmt: (v: number) => string }) {
   if (!active || !payload?.length) return null;
   return (
@@ -33,17 +80,22 @@ function CustomTooltip({ active, payload, fmt }: { active?: boolean; payload?: {
 export default function AllocationCharts({ data }: Props) {
   const { fmt } = useCurrency();
 
-  const nameCounts = data.providers.reduce<Record<string, number>>((acc, p) => {
-    acc[p.name] = (acc[p.name] ?? 0) + 1;
-    return acc;
-  }, {});
-
-  const providerData = data.providers
-    .map(p => ({
-      name: nameCounts[p.name] > 1 && p.accountType ? `${p.name} (${p.accountType})` : p.name,
-      value: p.holdings.reduce((s, h) => s + h.currentValue, 0),
-      color: p.color || PROVIDER_COLORS[0],
-    }))
+  const providerData = Object.values(
+    data.providers.reduce<Record<string, { name: string; value: number; color: string; _entries: { value: number; color: string }[] }>>((acc, p) => {
+      const key = canonicalBroker(p.name);
+      const value = p.holdings.reduce((s, h) => s + h.currentValue, 0);
+      const color = p.color || PROVIDER_COLORS[0];
+      if (!acc[key]) {
+        acc[key] = { name: key, value, color, _entries: [{ value, color }] };
+      } else {
+        acc[key].value += value;
+        acc[key]._entries.push({ value, color });
+        acc[key].color = acc[key]._entries.reduce((a, b) => a.value >= b.value ? a : b).color;
+      }
+      return acc;
+    }, {})
+  )
+    .map(({ name, value, color }) => ({ name, value, color }))
     .filter(d => d.value > 0)
     .sort((a, b) => b.value - a.value);
 
@@ -76,7 +128,7 @@ export default function AllocationCharts({ data }: Props) {
   if (providerData.length === 0) return null;
 
   return (
-    <div className={`grid gap-4 ${showOwner ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3' : 'grid-cols-1 sm:grid-cols-2'}`}>
+    <div className={`grid gap-4 items-start ${showOwner ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3' : 'grid-cols-1 sm:grid-cols-2'}`}>
       <Chart title="By Provider" data={providerData} fmt={fmt} />
       <Chart title="By Account Type" data={accountTypeData} fmt={fmt} />
       {showOwner && <Chart title="By Owner" data={ownerData} fmt={fmt} />}
@@ -85,36 +137,49 @@ export default function AllocationCharts({ data }: Props) {
 }
 
 function Chart({ title, data, fmt }: { title: string; data: { name: string; value: number; color: string }[]; fmt: (v: number) => string }) {
+  const [expanded, setExpanded] = useState(true);
   const barHeight = 40;
   const chartHeight = Math.max(data.length * barHeight + 16, 80);
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-      <p className="text-sm font-semibold text-gray-700 mb-4">{title}</p>
-      <ResponsiveContainer width="100%" height={chartHeight}>
-        <BarChart
-          data={data}
-          layout="vertical"
-          margin={{ top: 0, right: 8, bottom: 0, left: 0 }}
-          barCategoryGap="25%"
-        >
-          <XAxis type="number" hide />
-          <YAxis
-            type="category"
-            dataKey="name"
-            width={90}
-            tick={{ fontSize: 12, fill: '#6b7280' }}
-            axisLine={false}
-            tickLine={false}
-          />
-          <Tooltip content={<CustomTooltip fmt={fmt} />} cursor={{ fill: '#f9fafb' }} />
-          <Bar dataKey="value" radius={[0, 6, 6, 0]}>
-            {data.map((entry, i) => (
-              <Cell key={i} fill={entry.color} />
-            ))}
-          </Bar>
-        </BarChart>
-      </ResponsiveContainer>
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm">
+      <button
+        onClick={() => setExpanded(v => !v)}
+        className="w-full flex items-center justify-between px-5 py-4 text-left"
+      >
+        <p className="text-sm font-semibold text-gray-700">{title}</p>
+        {expanded
+          ? <ChevronDown className="w-4 h-4 text-gray-400" />
+          : <ChevronRight className="w-4 h-4 text-gray-400" />}
+      </button>
+      {expanded && (
+        <div className="px-5 pb-5">
+          <ResponsiveContainer width="100%" height={chartHeight}>
+            <BarChart
+              data={data}
+              layout="vertical"
+              margin={{ top: 0, right: 8, bottom: 0, left: 0 }}
+              barCategoryGap="25%"
+            >
+              <XAxis type="number" hide />
+              <YAxis
+                type="category"
+                dataKey="name"
+                width={90}
+                tick={{ fontSize: 12, fill: '#6b7280' }}
+                axisLine={false}
+                tickLine={false}
+              />
+              <Tooltip content={<CustomTooltip fmt={fmt} />} cursor={{ fill: '#f9fafb' }} />
+              <Bar dataKey="value" radius={[0, 6, 6, 0]}>
+                {data.map((entry, i) => (
+                  <Cell key={i} fill={entry.color} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
     </div>
   );
 }

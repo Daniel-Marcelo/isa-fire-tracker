@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Upload } from 'lucide-react';
+import { ChevronDown, ChevronRight, Upload } from 'lucide-react';
 import type { AppData, FundHolding, UploadedFundHoldings } from '../types';
 import { useCurrency } from '../contexts/CurrencyContext';
 import ExposureCharts from './ExposureCharts';
@@ -44,6 +44,8 @@ const FLAG: Record<string, string> = {
   EG: '🇪🇬', GR: '🇬🇷', CL: '🇨🇱', CO: '🇨🇴', PE: '🇵🇪',
 };
 
+const FUND_KEYWORDS = /\b(etf|fund|ucits|trust|index|oeic|vct|reit|accumulation|income)\b/i;
+
 function matchesFund(h: { ticker?: string; name: string }, fundId: string) {
   return (
     h.ticker?.toUpperCase() === fundId ||
@@ -54,11 +56,13 @@ function matchesFund(h: { ticker?: string; name: string }, fundId: string) {
 export default function LookThrough({ data, fundHoldings }: Props) {
   const { fmt } = useCurrency();
   const [sectorFilter, setSectorFilter] = useState<string>('All');
+  const [fundsExpanded, setFundsExpanded] = useState(true);
 
   const fundRegistry = useMemo(() =>
     fundHoldings.map(u => ({
       id: u.fundTicker.toUpperCase(),
       label: u.fundTicker.toUpperCase(),
+      name: u.fundName || u.fundTicker.toUpperCase(),
       holdings: u.holdings as FundHolding[],
       updated: u.asAt,
     })),
@@ -74,7 +78,11 @@ export default function LookThrough({ data, fundHoldings }: Props) {
   const isFundHolding = (h: { ticker?: string; name: string }) =>
     fundRegistry.some(f => matchesFund(h, f.id));
 
-  const directHoldings = allHoldings.filter(h => !isFundHolding(h) && h.ticker);
+  const unmatchedFunds = allHoldings.filter(h =>
+    !isFundHolding(h) && h.currentValue > 0 && FUND_KEYWORDS.test(h.name)
+  );
+
+  const directHoldings = allHoldings.filter(h => !isFundHolding(h) && !FUND_KEYWORDS.test(h.name) && h.ticker);
   const totalPortfolio = allHoldings.reduce((s, h) => s + h.currentValue, 0);
 
   const rows = useMemo<ExposureRow[]>(() => {
@@ -133,9 +141,24 @@ export default function LookThrough({ data, fundHoldings }: Props) {
   }, [allHoldings, directHoldings, totalPortfolio, fundRegistry]);
 
   const allFundHoldings = fundRegistry.flatMap(f => f.holdings);
-  const sectors = ['All', ...Array.from(new Set(allFundHoldings.map(h => h.sector))).sort()];
+  const sectors = ['All', ...Array.from(new Set(allFundHoldings.map(h => h.sector).filter(Boolean))).sort()];
   const filtered = sectorFilter === 'All' ? rows : rows.filter(r => r.sector === sectorFilter);
   const coveredPct = rows.reduce((s, r) => s + r.totalPct, 0);
+
+  const activeFunds = fundTotals.filter(f => f.total > 0);
+  const unmatchedFundRows = Object.values(
+    unmatchedFunds.reduce<Record<string, { label: string; total: number }>>((acc, h) => {
+      const key = h.ticker?.toUpperCase() ?? h.name;
+      if (!acc[key]) acc[key] = { label: h.ticker?.toUpperCase() ?? h.name, total: 0 };
+      acc[key].total += h.currentValue;
+      return acc;
+    }, {})
+  ).sort((a, b) => b.total - a.total);
+  const allFundRows = [
+    ...activeFunds.map(f => ({ label: f.label, total: f.total, hasData: true })),
+    ...unmatchedFundRows.map(r => ({ label: r.label, total: r.total, hasData: false })),
+  ];
+  const totalFundValue = allFundRows.reduce((s, f) => s + f.total, 0);
 
   const anyFundHeld = fundTotals.some(f => f.total > 0);
   if (!anyFundHeld && directHoldings.length === 0) {
@@ -158,22 +181,38 @@ export default function LookThrough({ data, fundHoldings }: Props) {
 
   return (
     <div className="space-y-4">
-      {/* Summary cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-        {fundTotals.map(f => (
-          <div key={f.id} className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm">
-            <p className="text-sm text-gray-500">{f.label} exposure</p>
-            <p className="text-xl font-bold text-gray-900 mt-1">{fmt(f.total)}</p>
+      {/* Fund Exposure collapsible card */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        <button
+          onClick={() => setFundsExpanded(v => !v)}
+          className="w-full flex items-center justify-between px-4 py-3.5 text-left"
+        >
+          <div>
+            <p className="font-semibold text-gray-900">Fund Exposure</p>
             <p className="text-xs text-gray-400 mt-0.5">
-              across {f.heldHoldings.length} account{f.heldHoldings.length !== 1 ? 's' : ''}
+              {fmt(totalFundValue)} across {allFundRows.length} fund{allFundRows.length !== 1 ? 's' : ''} · top 50 positions · {coveredPct.toFixed(1)}% of portfolio
             </p>
           </div>
-        ))}
-        <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm">
-          <p className="text-sm text-gray-500">Portfolio covered</p>
-          <p className="text-xl font-bold text-gray-900 mt-1">{coveredPct.toFixed(1)}%</p>
-          <p className="text-xs text-gray-400 mt-0.5">top 50 by effective value</p>
-        </div>
+          {fundsExpanded
+            ? <ChevronDown className="w-4 h-4 text-gray-400 shrink-0" />
+            : <ChevronRight className="w-4 h-4 text-gray-400 shrink-0" />}
+        </button>
+        {fundsExpanded && (
+          <div className="border-t border-gray-100">
+            {allFundRows.map((f, i) => (
+              <div
+                key={f.label}
+                className={`flex items-center justify-between px-4 py-3 ${i < allFundRows.length - 1 ? 'border-b border-gray-50' : ''}`}
+              >
+                <div>
+                  <p className="font-medium text-gray-900">{f.label}</p>
+                  {!f.hasData && <p className="text-xs text-amber-500 mt-0.5">No holdings uploaded</p>}
+                </div>
+                <p className="font-semibold text-gray-900">{fmt(f.total)}</p>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Exposure donuts */}
@@ -196,9 +235,10 @@ export default function LookThrough({ data, fundHoldings }: Props) {
         ))}
       </div>
 
-      {/* Table */}
+      {/* Table — desktop full table, mobile card list */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
+        {/* Desktop table */}
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b border-gray-100">
               <tr className="text-xs text-gray-500 uppercase tracking-wide">
@@ -222,8 +262,8 @@ export default function LookThrough({ data, fundHoldings }: Props) {
                       <div className="flex items-center gap-2">
                         <span className="text-base">{FLAG[row.country] ?? '🌍'}</span>
                         <div>
-                          <div className="font-medium text-gray-900">{row.ticker}</div>
-                          <div className="text-xs text-gray-400 truncate max-w-36">{row.name}</div>
+                          <div className="font-medium text-gray-900">{row.name}</div>
+                          <div className="text-xs text-gray-400">{row.ticker}</div>
                         </div>
                       </div>
                     </td>
@@ -257,6 +297,38 @@ export default function LookThrough({ data, fundHoldings }: Props) {
             </tbody>
           </table>
         </div>
+
+        {/* Mobile card list */}
+        <div className="md:hidden divide-y divide-gray-50">
+          {filtered.map((row, i) => {
+            const barPct = Math.min((row.totalValue / (rows[0]?.totalValue || 1)) * 100, 100);
+            const sectorClass = SECTOR_COLOURS[row.sector] ?? 'bg-gray-100 text-gray-600';
+            return (
+              <div key={row.ticker} className="px-4 py-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-400 w-5">{i + 1}</span>
+                  <span className="text-base">{FLAG[row.country] ?? '🌍'}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-gray-900 truncate">{row.name}</p>
+                    <p className="text-xs text-gray-400">{row.ticker}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="font-semibold text-gray-900">{fmt(row.totalValue)}</p>
+                    <p className="text-xs text-gray-500">{row.totalPct.toFixed(2)}%</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 mt-2">
+                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${sectorClass}`}>{row.sector}</span>
+                  {row.directValue > 0 && <span className="text-xs text-indigo-600">Direct {fmt(row.directValue)}</span>}
+                  <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                    <div className="h-full bg-indigo-400 rounded-full" style={{ width: `${barPct}%` }} />
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
         <div className="px-4 py-3 border-t border-gray-100 bg-gray-50">
           <p className="text-xs text-gray-400">
             Fund weights from uploaded Vanguard data.{' '}

@@ -61,16 +61,13 @@ export async function searchStocks(query: string): Promise<StockResult[]> {
 
 export async function fetchLivePrices(tickers: string[]): Promise<Record<string, number>> {
   if (tickers.length === 0) return {};
+  const all = await getAllStocks();
+  const bySymbol = new Map(all.map(s => [s.symbol.toUpperCase(), s.price]));
   const results: Record<string, number> = {};
-  await Promise.allSettled(
-    tickers.map(async (ticker) => {
-      const res = await fetch(`${FIRESTORE_BASE}/stocks/${ticker}`);
-      if (!res.ok) return;
-      const doc = await res.json();
-      const price = extractNumber(doc?.fields?.latestPrice);
-      if (price !== null && price > 0) results[ticker] = price;
-    })
-  );
+  for (const ticker of tickers) {
+    const price = bySymbol.get(ticker.toUpperCase());
+    if (price != null && price > 0) results[ticker] = price;
+  }
   return results;
 }
 
