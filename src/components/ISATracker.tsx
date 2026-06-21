@@ -392,84 +392,116 @@ const owners = ['All', ...OWNERS] as const;
                   {provider.holdings.length === 0 ? (
                     <p className="text-sm text-gray-400 text-center py-4">No holdings yet</p>
                   ) : (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="text-gray-500 text-xs uppercase tracking-wide">
-                            <th className="text-left pb-2 font-medium">Name</th>
-                            <th className="text-right pb-2 font-medium">Units</th>
-                            <th className="text-right pb-2 font-medium">Price</th>
-                            <th className="text-right pb-2 font-medium">Value</th>
-                            <th className="text-right pb-2 font-medium">Cost</th>
-                            <th className="text-right pb-2 font-medium">Gain</th>
-                            <th className="pb-2"></th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-50">
-                          {provider.holdings.map(h => {
-                            const hGain = h.costBasis != null ? h.currentValue - h.costBasis : null;
-                            const hGainPct = h.costBasis ? (hGain! / h.costBasis) * 100 : null;
-                            const hCurrency = h.currency ?? userCurrency;
-                            const showNative = hCurrency !== userCurrency && Object.keys(fxRates).length > 0;
-                            function toNative(val: number) {
-                              return convertAmount(val, userCurrency, hCurrency, fxRates);
-                            }
-                            const nativeSym = getCurrencySymbol(hCurrency);
-                            return (
-                              <tr key={h.id} className="group">
-                                <td className="py-2 pr-4">
-                                  <div className="font-medium text-gray-900">{h.name}</div>
-                                  {h.ticker && <div className="text-xs text-gray-400">{h.ticker}</div>}
-                                </td>
-                                <td className="py-2 text-right text-gray-600">{h.units?.toFixed(4) ?? '—'}</td>
-                                <td className="py-2 text-right text-gray-600">
-                                  {h.currentPrice ? fmt(h.currentPrice) : '—'}
-                                  {showNative && h.currentPrice != null && (
-                                    <div className="text-xs text-gray-400">{nativeSym}{toNative(h.currentPrice).toFixed(2)}</div>
+                    <>
+                      {/* Mobile cards */}
+                      <div className="sm:hidden divide-y divide-gray-50">
+                        {provider.holdings.map(h => {
+                          const hGain = h.costBasis != null ? h.currentValue - h.costBasis : null;
+                          const hGainPct = h.costBasis ? (hGain! / h.costBasis) * 100 : null;
+                          const hCurrency = h.currency ?? userCurrency;
+                          const showNative = hCurrency !== userCurrency && Object.keys(fxRates).length > 0;
+                          const toNative = (val: number) => convertAmount(val, userCurrency, hCurrency, fxRates);
+                          const nativeSym = getCurrencySymbol(hCurrency);
+                          return (
+                            <div key={h.id} className="py-3 flex items-start justify-between gap-3">
+                              <div className="min-w-0 flex-1">
+                                <div className="font-medium text-gray-900 text-sm">{h.name}</div>
+                                {h.ticker && <div className="text-xs text-gray-400 mt-0.5">{h.ticker}</div>}
+                                <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1.5 text-xs text-gray-500">
+                                  {h.units != null && <span>{h.units.toFixed(4)} units</span>}
+                                  {h.currentPrice != null && (
+                                    <span>@ {fmt(h.currentPrice)}{showNative ? ` (${nativeSym}${toNative(h.currentPrice).toFixed(2)})` : ''}</span>
                                   )}
-                                </td>
-                                <td className="py-2 text-right font-medium text-gray-900">
-                                  {fmt(h.currentValue)}
-                                  {showNative && (
-                                    <div className="text-xs text-gray-400">{nativeSym}{toNative(h.currentValue).toFixed(2)}</div>
-                                  )}
-                                </td>
-                                <td className="py-2 text-right text-gray-500">
-                                  {h.costBasis != null ? fmt(h.costBasis) : '—'}
-                                  {showNative && h.costBasis != null && (
-                                    <div className="text-xs text-gray-400">{nativeSym}{toNative(h.costBasis).toFixed(2)}</div>
-                                  )}
-                                </td>
-                                <td className="py-2 text-right">
-                                  {hGain != null ? (
-                                    <span className={hGain >= 0 ? 'text-emerald-600' : 'text-red-500'}>
-                                      {hGain >= 0 ? '+' : ''}{fmt(hGain)}
-                                      {hGainPct != null && <span className="text-xs ml-1">({hGainPct.toFixed(2)}%)</span>}
-                                    </span>
-                                  ) : '—'}
-                                </td>
-                                <td className="py-2 text-right">
-                                  <div className="flex items-center justify-end gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
-                                    <button
-                                      onClick={() => setEditHolding({ providerId: provider.id, holding: h })}
-                                      className="p-1 text-gray-400 hover:text-indigo-600 transition-colors"
-                                    >
-                                      <Pencil size={13} />
-                                    </button>
-                                    <button
-                                      onClick={() => deleteHolding(provider.id, h.id)}
-                                      className="p-1 text-gray-400 hover:text-red-500 transition-colors"
-                                    >
-                                      <Trash2 size={13} />
-                                    </button>
+                                  {h.costBasis != null && <span>Cost {fmt(h.costBasis)}</span>}
+                                </div>
+                              </div>
+                              <div className="text-right shrink-0">
+                                <div className="font-medium text-gray-900 text-sm">{fmt(h.currentValue)}</div>
+                                {showNative && <div className="text-xs text-gray-400">{nativeSym}{toNative(h.currentValue).toFixed(2)}</div>}
+                                {hGain != null && (
+                                  <div className={`text-xs mt-0.5 ${hGain >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                                    {hGain >= 0 ? '+' : ''}{fmt(hGain)}
+                                    {hGainPct != null && <span className="ml-1">({hGainPct.toFixed(1)}%)</span>}
                                   </div>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
+                                )}
+                                <div className="flex items-center justify-end gap-1 mt-1.5">
+                                  <button onClick={() => setEditHolding({ providerId: provider.id, holding: h })} className="p-1 text-gray-400 hover:text-indigo-600 transition-colors"><Pencil size={13} /></button>
+                                  <button onClick={() => deleteHolding(provider.id, h.id)} className="p-1 text-gray-400 hover:text-red-500 transition-colors"><Trash2 size={13} /></button>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Desktop table */}
+                      <div className="hidden sm:block overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="text-gray-500 text-xs uppercase tracking-wide">
+                              <th className="text-left pb-2 font-medium">Name</th>
+                              <th className="text-right pb-2 font-medium">Units</th>
+                              <th className="text-right pb-2 font-medium">Price</th>
+                              <th className="text-right pb-2 font-medium">Value</th>
+                              <th className="text-right pb-2 font-medium">Cost</th>
+                              <th className="text-right pb-2 font-medium">Gain</th>
+                              <th className="pb-2"></th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-50">
+                            {provider.holdings.map(h => {
+                              const hGain = h.costBasis != null ? h.currentValue - h.costBasis : null;
+                              const hGainPct = h.costBasis ? (hGain! / h.costBasis) * 100 : null;
+                              const hCurrency = h.currency ?? userCurrency;
+                              const showNative = hCurrency !== userCurrency && Object.keys(fxRates).length > 0;
+                              const toNative = (val: number) => convertAmount(val, userCurrency, hCurrency, fxRates);
+                              const nativeSym = getCurrencySymbol(hCurrency);
+                              return (
+                                <tr key={h.id} className="group">
+                                  <td className="py-2 pr-4">
+                                    <div className="font-medium text-gray-900">{h.name}</div>
+                                    {h.ticker && <div className="text-xs text-gray-400">{h.ticker}</div>}
+                                  </td>
+                                  <td className="py-2 text-right text-gray-600">{h.units?.toFixed(4) ?? '—'}</td>
+                                  <td className="py-2 text-right text-gray-600">
+                                    {h.currentPrice ? fmt(h.currentPrice) : '—'}
+                                    {showNative && h.currentPrice != null && (
+                                      <div className="text-xs text-gray-400">{nativeSym}{toNative(h.currentPrice).toFixed(2)}</div>
+                                    )}
+                                  </td>
+                                  <td className="py-2 text-right font-medium text-gray-900">
+                                    {fmt(h.currentValue)}
+                                    {showNative && (
+                                      <div className="text-xs text-gray-400">{nativeSym}{toNative(h.currentValue).toFixed(2)}</div>
+                                    )}
+                                  </td>
+                                  <td className="py-2 text-right text-gray-500">
+                                    {h.costBasis != null ? fmt(h.costBasis) : '—'}
+                                    {showNative && h.costBasis != null && (
+                                      <div className="text-xs text-gray-400">{nativeSym}{toNative(h.costBasis).toFixed(2)}</div>
+                                    )}
+                                  </td>
+                                  <td className="py-2 text-right">
+                                    {hGain != null ? (
+                                      <span className={hGain >= 0 ? 'text-emerald-600' : 'text-red-500'}>
+                                        {hGain >= 0 ? '+' : ''}{fmt(hGain)}
+                                        {hGainPct != null && <span className="text-xs ml-1">({hGainPct.toFixed(2)}%)</span>}
+                                      </span>
+                                    ) : '—'}
+                                  </td>
+                                  <td className="py-2 text-right">
+                                    <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                      <button onClick={() => setEditHolding({ providerId: provider.id, holding: h })} className="p-1 text-gray-400 hover:text-indigo-600 transition-colors"><Pencil size={13} /></button>
+                                      <button onClick={() => deleteHolding(provider.id, h.id)} className="p-1 text-gray-400 hover:text-red-500 transition-colors"><Trash2 size={13} /></button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </>
                   )}
                 </div>
               </div>
