@@ -334,13 +334,17 @@ const owners = ['All', ...OWNERS] as const;
             >
               <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: provider.color }} />
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:gap-2">
                   <span className="font-semibold text-gray-900">{provider.name}</span>
-                  {provider.owner && (
-                    <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">{provider.owner}</span>
-                  )}
-                  {provider.accountType && (
-                    <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700">{provider.accountType}</span>
+                  {(provider.owner || provider.accountType) && (
+                    <div className="flex items-center gap-2 mt-1 sm:mt-0">
+                      {provider.owner && (
+                        <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">{provider.owner}</span>
+                      )}
+                      {provider.accountType && (
+                        <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700">{provider.accountType}</span>
+                      )}
+                    </div>
                   )}
                 </div>
                 <span className="text-sm text-gray-500">
