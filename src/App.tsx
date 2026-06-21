@@ -268,14 +268,15 @@ export default function App() {
                 </header>
 
                 {/* Bottom nav — mobile only */}
-                <nav className="sm:hidden fixed bottom-0 inset-x-0 z-40 bg-white border-t border-gray-100 flex">
+                <nav className="sm:hidden fixed bottom-0 inset-x-0 z-40 bg-white border-t border-gray-100 flex" style={{paddingBottom: 'env(safe-area-inset-bottom)'}}>
                   <BottomTabLink to="/" icon={<BarChart3 size={20} />} label="Portfolio" />
                   <BottomTabLink to="/lookthrough" icon={<Layers size={20} />} label="Look-through" />
                   {isAdmin && <BottomTabLink to="/funds" icon={<FolderOpen size={20} />} label="Funds" />}
                   <BottomTabLink to="/fire" icon={<Flame size={20} />} label="FIRE" />
                 </nav>
 
-                <main className="max-w-5xl mx-auto px-4 py-6 pb-24 sm:pb-6">
+                <main className="max-w-5xl mx-auto px-4 py-6 pb-24 sm:pb-6" style={{paddingBottom: 'calc(6rem + env(safe-area-inset-bottom))'}}>
+
                   <Routes>
                     <Route path="/" element={<ISATracker data={data} onChange={handleChange} livePrices={livePrices} fxRates={fxRates} />} />
                     <Route path="/lookthrough" element={<LookThrough data={data} fundHoldings={fundHoldings} />} />
