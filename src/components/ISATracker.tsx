@@ -334,17 +334,13 @@ const owners = ['All', ...OWNERS] as const;
             >
               <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: provider.color }} />
               <div className="flex-1 min-w-0">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-semibold text-gray-900">{provider.name}</span>
-                  {(provider.owner || provider.accountType) && (
-                    <div className="flex items-center gap-2 mt-1 sm:mt-0">
-                      {provider.owner && (
-                        <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">{provider.owner}</span>
-                      )}
-                      {provider.accountType && (
-                        <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700">{provider.accountType}</span>
-                      )}
-                    </div>
+                  {provider.owner && (
+                    <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">{provider.owner}</span>
+                  )}
+                  {provider.accountType && (
+                    <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700">{provider.accountType}</span>
                   )}
                 </div>
                 <span className="text-sm text-gray-500">
@@ -499,11 +495,17 @@ const owners = ['All', ...OWNERS] as const;
               return (
                 <div key={p.id}>
                   <div className="flex justify-between text-sm mb-1">
-                    <span className="flex items-center gap-2 flex-wrap">
-                      <span className="w-2.5 h-2.5 rounded-full inline-block shrink-0" style={{ backgroundColor: p.color }} />
-                      {label}
-                      {p.accountType && <span className="px-1.5 py-0.5 text-xs rounded-full bg-indigo-50 text-indigo-600 font-medium">{p.accountType}</span>}
-                      {p.owner && <span className="px-1.5 py-0.5 text-xs rounded-full bg-gray-100 text-gray-500 font-medium">{p.owner}</span>}
+                    <span className="flex flex-col">
+                      <span className="flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 rounded-full inline-block shrink-0" style={{ backgroundColor: p.color }} />
+                        {label}
+                      </span>
+                      {(p.accountType || p.owner) && (
+                        <span className="flex items-center gap-1.5 mt-1 ml-4">
+                          {p.accountType && <span className="px-1.5 py-0.5 text-xs rounded-full bg-indigo-50 text-indigo-600 font-medium">{p.accountType}</span>}
+                          {p.owner && <span className="px-1.5 py-0.5 text-xs rounded-full bg-gray-100 text-gray-500 font-medium">{p.owner}</span>}
+                        </span>
+                      )}
                     </span>
                     <span className="text-gray-600 shrink-0 ml-2">{fmt(val)} <span className="text-gray-400">({pct.toFixed(1)}%)</span></span>
                   </div>
