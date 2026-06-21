@@ -186,24 +186,6 @@ const owners = ['All', ...OWNERS] as const;
 
   return (
     <div className="space-y-6">
-      {/* Sticky mobile header */}
-      <div className="md:hidden sticky top-0 z-10 -mx-4 px-4 py-3 bg-white border-b border-gray-100 shadow-sm flex items-center justify-between">
-        <div>
-          <p className="text-xs text-gray-400">Total Portfolio</p>
-          <p className="text-lg font-bold text-gray-900">{fmt(totalValue)}</p>
-        </div>
-        {totalCostBasis > 0 && (
-          <div className="text-right">
-            <p className={`text-sm font-semibold ${totalGain >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-              {totalGain >= 0 ? '+' : ''}{fmt(totalGain)}
-            </p>
-            <p className={`text-xs ${totalGain >= 0 ? 'text-emerald-500' : 'text-red-400'}`}>
-              {totalGain >= 0 ? '+' : ''}{totalGainPct.toFixed(2)}%
-            </p>
-          </div>
-        )}
-      </div>
-
       {/* Summary cards */}
       {(() => {
         const PENSION_TYPES = new Set<string>(['SIPP', 'Workplace Pension']);
