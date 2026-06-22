@@ -198,7 +198,7 @@ export default function App() {
   }
 
   function handleCurrencyChange(newCurrency: string) {
-    handleChange({ ...data, userSettings: { ...data.userSettings, currency: newCurrency } });
+    handleChange({ ...baseData.current, userSettings: { ...baseData.current.userSettings, currency: newCurrency } });
   }
 
   const isAdmin = !!ADMIN_EMAIL && user?.email === ADMIN_EMAIL;
