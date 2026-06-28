@@ -1,10 +1,43 @@
+@import url('https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=Space+Grotesk:wght@300;400;500;600;700&display=swap');
 @import "tailwindcss";
 
 @layer base {
+  body {
+    font-family: 'Space Grotesk', system-ui, sans-serif;
+    background-color: rgb(2 6 23);
+    color: rgb(248 250 252);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Archivo', system-ui, sans-serif;
+  }
+
   button, [role="button"], label[for], label:has(input) {
     cursor: pointer;
   }
   button:disabled {
     cursor: not-allowed;
+  }
+
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input[type="number"] {
+    -moz-appearance: textfield;
+  }
+
+  input, select, textarea {
+    color-scheme: dark;
+  }
+
+  @keyframes spin-once {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+  }
+  .spin-once {
+    animation: spin-once 0.6s ease-out;
   }
 }

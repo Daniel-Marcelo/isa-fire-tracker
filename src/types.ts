@@ -3,10 +3,12 @@ export interface Holding {
   name: string;
   ticker?: string;
   units?: number;
+  costBasis?: number;       // total cost in native currency (stored)
+  manualValue?: number;     // current value in native currency, for ticker-less holdings (stored)
+  currency?: string;        // native currency ISO 4217, default 'GBP' (stored)
+  // Runtime-derived — not persisted to Supabase:
   currentPrice?: number;
-  currentValue: number;
-  costBasis?: number;
-  currency?: string; // ISO 4217 code for the price/value denomination, default 'GBP'
+  currentValue?: number;
 }
 
 export type AccountType = 'ISA' | 'SIPP' | 'GIA' | 'Workplace Pension';

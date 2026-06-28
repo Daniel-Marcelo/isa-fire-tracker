@@ -35,9 +35,9 @@ function CustomTooltip({ active, payload, fmt }: { active?: boolean; payload?: {
   if (!active || !payload?.length) return null;
   const { name, value, payload: inner } = payload[0];
   return (
-    <div className="bg-white border border-gray-100 rounded-xl shadow-lg px-3 py-2 text-sm">
-      <p className="font-medium text-gray-800">{name}</p>
-      <p className="text-gray-600 mt-0.5">{fmt(value)} · {inner.pct.toFixed(1)}%</p>
+    <div className="bg-slate-800 border border-slate-700 rounded-xl shadow-2xl px-3 py-2 text-sm">
+      <p className="font-medium text-slate-100">{name}</p>
+      <p className="text-slate-400 mt-0.5">{fmt(value)} · {inner.pct.toFixed(1)}%</p>
     </div>
   );
 }
@@ -61,7 +61,7 @@ export default function ExposureCharts({ data, fundHoldings }: Props) {
 
   fundRegistry.forEach(fund => {
     const userHoldings = allHoldings.filter(h => matchesFund(h, fund.id));
-    const total = userHoldings.reduce((s, h) => s + h.currentValue, 0);
+    const total = userHoldings.reduce((s, h) => s + h.currentValue ?? 0, 0);
     if (total === 0) return;
     fund.holdings.forEach(fh => {
       if (fh.ticker === 'OTHER') return;
@@ -73,8 +73,8 @@ export default function ExposureCharts({ data, fundHoldings }: Props) {
   });
 
   directHoldings.forEach(h => {
-    sectorMap.set('Direct', (sectorMap.get('Direct') ?? 0) + h.currentValue);
-    countryMap.set('US', (countryMap.get('US') ?? 0) + h.currentValue);
+    sectorMap.set('Direct', (sectorMap.get('Direct') ?? 0) + h.currentValue ?? 0);
+    countryMap.set('US', (countryMap.get('US') ?? 0) + h.currentValue ?? 0);
   });
 
   const total = Array.from(sectorMap.values()).reduce((s, v) => s + v, 0);
@@ -103,8 +103,8 @@ export default function ExposureCharts({ data, fundHoldings }: Props) {
 
 function DonutChart({ title, data, fmt }: { title: string; data: { name: string; value: number; pct: number; fill: string }[]; fmt: (v: number) => string }) {
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-      <p className="text-sm font-semibold text-gray-700 mb-2">{title}</p>
+    <div className="bg-slate-800/70 rounded-xl border border-slate-700/50 p-5">
+      <p className="text-sm font-semibold text-slate-300 mb-2">{title}</p>
       <ResponsiveContainer width="100%" height={260}>
         <PieChart>
           <Pie
@@ -118,14 +118,14 @@ function DonutChart({ title, data, fmt }: { title: string; data: { name: string;
             nameKey="name"
           >
             {data.map((entry, i) => (
-              <Cell key={i} fill={entry.fill} stroke="white" strokeWidth={2} />
+              <Cell key={i} fill={entry.fill} stroke="#0f172a" strokeWidth={2} />
             ))}
           </Pie>
           <Tooltip content={<CustomTooltip fmt={fmt} />} />
           <Legend
             iconType="circle"
             iconSize={8}
-            formatter={(value) => <span className="text-xs text-gray-600">{value}</span>}
+            formatter={(value) => <span className="text-xs text-slate-500">{value}</span>}
           />
         </PieChart>
       </ResponsiveContainer>

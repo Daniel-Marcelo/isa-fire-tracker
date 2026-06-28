@@ -22,16 +22,16 @@ interface ExposureRow {
 }
 
 const SECTOR_COLOURS: Record<string, string> = {
-  Technology:    'bg-indigo-100 text-indigo-700',
-  Financials:    'bg-emerald-100 text-emerald-700',
-  Healthcare:    'bg-rose-100 text-rose-700',
-  Consumer:      'bg-amber-100 text-amber-700',
-  Energy:        'bg-orange-100 text-orange-700',
-  Industrials:   'bg-cyan-100 text-cyan-700',
-  Materials:     'bg-lime-100 text-lime-700',
-  Telecom:       'bg-violet-100 text-violet-700',
-  'Real Estate': 'bg-sky-100 text-sky-700',
-  Utilities:     'bg-teal-100 text-teal-700',
+  Technology:    'bg-indigo-900/40 text-indigo-400',
+  Financials:    'bg-emerald-900/40 text-emerald-400',
+  Healthcare:    'bg-rose-900/40 text-rose-400',
+  Consumer:      'bg-amber-900/40 text-amber-400',
+  Energy:        'bg-orange-900/40 text-orange-400',
+  Industrials:   'bg-cyan-900/40 text-cyan-400',
+  Materials:     'bg-lime-900/40 text-lime-400',
+  Telecom:       'bg-violet-900/40 text-violet-400',
+  'Real Estate': 'bg-sky-900/40 text-sky-400',
+  Utilities:     'bg-teal-900/40 text-teal-400',
 };
 
 const FLAG: Record<string, string> = {
@@ -72,25 +72,25 @@ export default function LookThrough({ data, fundHoldings }: Props) {
 
   const fundTotals = fundRegistry.map(fund => {
     const held = allHoldings.filter(h => matchesFund(h, fund.id));
-    return { ...fund, heldHoldings: held, total: held.reduce((s, h) => s + h.currentValue, 0) };
+    return { ...fund, heldHoldings: held, total: held.reduce((s, h) => s + h.currentValue ?? 0, 0) };
   });
 
   const isFundHolding = (h: { ticker?: string; name: string }) =>
     fundRegistry.some(f => matchesFund(h, f.id));
 
   const unmatchedFunds = allHoldings.filter(h =>
-    !isFundHolding(h) && h.currentValue > 0 && FUND_KEYWORDS.test(h.name)
+    !isFundHolding(h) && (h.currentValue ?? 0) > 0 && FUND_KEYWORDS.test(h.name)
   );
 
   const directHoldings = allHoldings.filter(h => !isFundHolding(h) && !FUND_KEYWORDS.test(h.name) && h.ticker);
-  const totalPortfolio = allHoldings.reduce((s, h) => s + h.currentValue, 0);
+  const totalPortfolio = allHoldings.reduce((s, h) => s + h.currentValue ?? 0, 0);
 
   const rows = useMemo<ExposureRow[]>(() => {
     const map = new Map<string, ExposureRow>();
 
     fundRegistry.forEach(fund => {
       const userHoldings = allHoldings.filter(h => matchesFund(h, fund.id));
-      const total = userHoldings.reduce((s, h) => s + h.currentValue, 0);
+      const total = userHoldings.reduce((s, h) => s + h.currentValue ?? 0, 0);
       if (total === 0) return;
       fund.holdings.forEach(fh => {
         const contribution = total * (fh.weight / 100);
@@ -117,8 +117,8 @@ export default function LookThrough({ data, fundHoldings }: Props) {
       const ticker = h.ticker!.toUpperCase();
       const existing = map.get(ticker);
       if (existing) {
-        existing.directValue = h.currentValue;
-        existing.totalValue = existing.fundValue + h.currentValue;
+        existing.directValue = h.currentValue ?? 0;
+        existing.totalValue = existing.fundValue + h.currentValue ?? 0;
       } else {
         map.set(ticker, {
           ticker,
@@ -126,8 +126,8 @@ export default function LookThrough({ data, fundHoldings }: Props) {
           country: 'US',
           sector: 'Other',
           fundValue: 0,
-          directValue: h.currentValue,
-          totalValue: h.currentValue,
+          directValue: h.currentValue ?? 0,
+          totalValue: h.currentValue ?? 0,
           totalPct: 0,
         });
       }
@@ -150,7 +150,7 @@ export default function LookThrough({ data, fundHoldings }: Props) {
     unmatchedFunds.reduce<Record<string, { label: string; total: number }>>((acc, h) => {
       const key = h.ticker?.toUpperCase() ?? h.name;
       if (!acc[key]) acc[key] = { label: h.ticker?.toUpperCase() ?? h.name, total: 0 };
-      acc[key].total += h.currentValue;
+      acc[key].total += h.currentValue ?? 0;
       return acc;
     }, {})
   ).sort((a, b) => b.total - a.total);
@@ -163,14 +163,14 @@ export default function LookThrough({ data, fundHoldings }: Props) {
   const anyFundHeld = fundTotals.some(f => f.total > 0);
   if (!anyFundHeld && directHoldings.length === 0) {
     return (
-      <div className="bg-white rounded-2xl border border-gray-100 p-10 text-center shadow-sm">
-        <p className="text-lg font-medium text-gray-500">No look-through data yet</p>
-        <p className="text-sm text-gray-400 mt-1 max-w-sm mx-auto">
+      <div className="bg-slate-800/70 rounded-xl border border-slate-700/50 p-10 text-center">
+        <p className="text-lg font-medium text-slate-500">No look-through data yet</p>
+        <p className="text-sm text-slate-600 mt-1 max-w-sm mx-auto">
           Upload a fund's holdings breakdown on the Fund Holdings page, or add direct stock holdings, to see your effective exposure.
         </p>
         <Link
           to="/funds"
-          className="mt-4 inline-flex items-center gap-2 px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+          className="mt-4 inline-flex items-center gap-2 px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-500 transition-colors"
         >
           <Upload className="w-4 h-4" />
           Go to Fund Holdings
@@ -182,33 +182,33 @@ export default function LookThrough({ data, fundHoldings }: Props) {
   return (
     <div className="space-y-4">
       {/* Fund Exposure collapsible card */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+      <div className="bg-slate-800/70 rounded-xl border border-slate-700/50 overflow-hidden">
         <button
           onClick={() => setFundsExpanded(v => !v)}
-          className="w-full flex items-center justify-between px-4 py-3.5 text-left"
+          className="w-full flex items-center justify-between px-4 py-3.5 text-left hover:bg-slate-700/20 transition-colors"
         >
           <div>
-            <p className="font-semibold text-gray-900">Fund Exposure</p>
-            <p className="text-xs text-gray-400 mt-0.5">
+            <p className="font-semibold text-slate-100">Fund Exposure</p>
+            <p className="text-xs text-slate-500 mt-0.5">
               {fmt(totalFundValue)} across {allFundRows.length} fund{allFundRows.length !== 1 ? 's' : ''} · top 50 positions · {coveredPct.toFixed(1)}% of portfolio
             </p>
           </div>
           {fundsExpanded
-            ? <ChevronDown className="w-4 h-4 text-gray-400 shrink-0" />
-            : <ChevronRight className="w-4 h-4 text-gray-400 shrink-0" />}
+            ? <ChevronDown className="w-4 h-4 text-slate-500 shrink-0" />
+            : <ChevronRight className="w-4 h-4 text-slate-500 shrink-0" />}
         </button>
         {fundsExpanded && (
-          <div className="border-t border-gray-100">
+          <div className="border-t border-slate-700/50">
             {allFundRows.map((f, i) => (
               <div
                 key={f.label}
-                className={`flex items-center justify-between px-4 py-3 ${i < allFundRows.length - 1 ? 'border-b border-gray-50' : ''}`}
+                className={`flex items-center justify-between px-4 py-3 ${i < allFundRows.length - 1 ? 'border-b border-slate-700/30' : ''}`}
               >
                 <div>
-                  <p className="font-medium text-gray-900">{f.label}</p>
-                  {!f.hasData && <p className="text-xs text-amber-500 mt-0.5">No holdings uploaded</p>}
+                  <p className="font-medium text-slate-200">{f.label}</p>
+                  {!f.hasData && <p className="text-xs text-amber-400 mt-0.5">No holdings uploaded</p>}
                 </div>
-                <p className="font-semibold text-gray-900">{fmt(f.total)}</p>
+                <p className="font-semibold text-slate-100 tabular-nums">{fmt(f.total)}</p>
               </div>
             ))}
           </div>
@@ -227,7 +227,7 @@ export default function LookThrough({ data, fundHoldings }: Props) {
             className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
               sectorFilter === s
                 ? 'bg-indigo-600 text-white'
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-slate-200 border border-slate-700'
             }`}
           >
             {s}
@@ -236,12 +236,12 @@ export default function LookThrough({ data, fundHoldings }: Props) {
       </div>
 
       {/* Table — desktop full table, mobile card list */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+      <div className="bg-slate-800/70 rounded-xl border border-slate-700/50 overflow-hidden">
         {/* Desktop table */}
         <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-gray-50 border-b border-gray-100">
-              <tr className="text-xs text-gray-500 uppercase tracking-wide">
+            <thead className="bg-slate-900/60 border-b border-slate-700/50">
+              <tr className="text-xs text-slate-600 uppercase tracking-wider">
                 <th className="text-left px-4 py-3 font-medium">#</th>
                 <th className="text-left px-4 py-3 font-medium">Stock</th>
                 <th className="text-left px-4 py-3 font-medium">Sector</th>
@@ -252,43 +252,43 @@ export default function LookThrough({ data, fundHoldings }: Props) {
                 <th className="px-4 py-3"></th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-50">
+            <tbody className="divide-y divide-slate-800">
               {filtered.map((row, i) => {
                 const barPct = Math.min((row.totalValue / (rows[0]?.totalValue || 1)) * 100, 100);
                 return (
-                  <tr key={row.ticker} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-4 py-3 text-gray-400 text-xs">{i + 1}</td>
+                  <tr key={row.ticker} className="hover:bg-slate-700/20 transition-colors">
+                    <td className="px-4 py-3 text-slate-600 text-xs tabular-nums">{i + 1}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <span className="text-base">{FLAG[row.country] ?? '🌍'}</span>
                         <div>
-                          <div className="font-medium text-gray-900">{row.name}</div>
-                          <div className="text-xs text-gray-400">{row.ticker}</div>
+                          <div className="font-medium text-slate-100">{row.name}</div>
+                          <div className="text-xs text-slate-500 font-mono">{row.ticker}</div>
                         </div>
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${SECTOR_COLOURS[row.sector] ?? 'bg-gray-100 text-gray-600'}`}>
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${SECTOR_COLOURS[row.sector] ?? 'bg-slate-700 text-slate-400'}`}>
                         {row.sector}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-right text-gray-500">
+                    <td className="px-4 py-3 text-right text-slate-500 tabular-nums">
                       {row.fundValue > 0 ? fmt(row.fundValue) : '—'}
                     </td>
-                    <td className="px-4 py-3 text-right">
+                    <td className="px-4 py-3 text-right tabular-nums">
                       {row.directValue > 0
-                        ? <span className="text-indigo-600 font-medium">{fmt(row.directValue)}</span>
-                        : <span className="text-gray-300">—</span>}
+                        ? <span className="text-indigo-400 font-medium">{fmt(row.directValue)}</span>
+                        : <span className="text-slate-700">—</span>}
                     </td>
-                    <td className="px-4 py-3 text-right font-semibold text-gray-900">
+                    <td className="px-4 py-3 text-right font-semibold text-slate-100 tabular-nums">
                       {fmt(row.totalValue)}
                     </td>
-                    <td className="px-4 py-3 text-right text-gray-600">
+                    <td className="px-4 py-3 text-right text-slate-400 tabular-nums">
                       {row.totalPct.toFixed(2)}%
                     </td>
                     <td className="px-4 py-3 w-24">
-                      <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                        <div className="h-full bg-indigo-400 rounded-full" style={{ width: `${barPct}%` }} />
+                      <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                        <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${barPct}%` }} />
                       </div>
                     </td>
                   </tr>
@@ -299,29 +299,29 @@ export default function LookThrough({ data, fundHoldings }: Props) {
         </div>
 
         {/* Mobile card list */}
-        <div className="md:hidden divide-y divide-gray-50">
+        <div className="md:hidden divide-y divide-slate-800">
           {filtered.map((row, i) => {
             const barPct = Math.min((row.totalValue / (rows[0]?.totalValue || 1)) * 100, 100);
-            const sectorClass = SECTOR_COLOURS[row.sector] ?? 'bg-gray-100 text-gray-600';
+            const sectorClass = SECTOR_COLOURS[row.sector] ?? 'bg-slate-700 text-slate-400';
             return (
               <div key={row.ticker} className="px-4 py-3">
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-gray-400 w-5">{i + 1}</span>
+                  <span className="text-xs text-slate-600 w-5 tabular-nums">{i + 1}</span>
                   <span className="text-base">{FLAG[row.country] ?? '🌍'}</span>
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium text-gray-900 truncate">{row.name}</p>
-                    <p className="text-xs text-gray-400">{row.ticker}</p>
+                    <p className="font-medium text-slate-100 truncate">{row.name}</p>
+                    <p className="text-xs text-slate-500 font-mono">{row.ticker}</p>
                   </div>
                   <div className="text-right">
-                    <p className="font-semibold text-gray-900">{fmt(row.totalValue)}</p>
-                    <p className="text-xs text-gray-500">{row.totalPct.toFixed(2)}%</p>
+                    <p className="font-semibold text-slate-100 tabular-nums">{fmt(row.totalValue)}</p>
+                    <p className="text-xs text-slate-500 tabular-nums">{row.totalPct.toFixed(2)}%</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2 mt-2">
                   <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${sectorClass}`}>{row.sector}</span>
-                  {row.directValue > 0 && <span className="text-xs text-indigo-600">Direct {fmt(row.directValue)}</span>}
-                  <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                    <div className="h-full bg-indigo-400 rounded-full" style={{ width: `${barPct}%` }} />
+                  {row.directValue > 0 && <span className="text-xs text-indigo-400 tabular-nums">Direct {fmt(row.directValue)}</span>}
+                  <div className="flex-1 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                    <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${barPct}%` }} />
                   </div>
                 </div>
               </div>
@@ -329,8 +329,8 @@ export default function LookThrough({ data, fundHoldings }: Props) {
           })}
         </div>
 
-        <div className="px-4 py-3 border-t border-gray-100 bg-gray-50">
-          <p className="text-xs text-gray-400">
+        <div className="px-4 py-3 border-t border-slate-700/50 bg-slate-900/40">
+          <p className="text-xs text-slate-600">
             Fund weights from uploaded Vanguard data.{' '}
             {fundRegistry.map(f => `${f.label}: ${f.updated}`).join(' · ')}.{' '}
             Top 50 positions shown. Direct holdings merged where tickers match.

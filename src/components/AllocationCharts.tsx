@@ -70,9 +70,9 @@ function canonicalBroker(name: string): string {
 function CustomTooltip({ active, payload, fmt }: { active?: boolean; payload?: { name: string; value: number }[]; fmt: (v: number) => string }) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="bg-white border border-gray-100 rounded-xl shadow-lg px-3 py-2 text-sm">
-      <p className="font-medium text-gray-800">{payload[0].name}</p>
-      <p className="text-gray-600 mt-0.5">{fmt(payload[0].value)}</p>
+    <div className="bg-slate-800 border border-slate-700 rounded-xl shadow-2xl px-3 py-2 text-sm">
+      <p className="font-medium text-slate-100">{payload[0].name}</p>
+      <p className="text-slate-400 mt-0.5">{fmt(payload[0].value)}</p>
     </div>
   );
 }
@@ -83,7 +83,7 @@ export default function AllocationCharts({ data }: Props) {
   const providerData = Object.values(
     data.providers.reduce<Record<string, { name: string; value: number; color: string; _entries: { value: number; color: string }[] }>>((acc, p) => {
       const key = canonicalBroker(p.name);
-      const value = p.holdings.reduce((s, h) => s + h.currentValue, 0);
+      const value = p.holdings.reduce((s, h) => s + h.currentValue ?? 0, 0);
       const color = p.color || PROVIDER_COLORS[0];
       if (!acc[key]) {
         acc[key] = { name: key, value, color, _entries: [{ value, color }] };
@@ -102,7 +102,7 @@ export default function AllocationCharts({ data }: Props) {
   const accountTypeData = Object.entries(
     data.providers.reduce<Record<string, number>>((acc, p) => {
       const type = p.accountType ?? 'Other';
-      const val = p.holdings.reduce((s, h) => s + h.currentValue, 0);
+      const val = p.holdings.reduce((s, h) => s + h.currentValue ?? 0, 0);
       acc[type] = (acc[type] ?? 0) + val;
       return acc;
     }, {})
@@ -114,7 +114,7 @@ export default function AllocationCharts({ data }: Props) {
   const ownerData = Object.entries(
     data.providers.reduce<Record<string, number>>((acc, p) => {
       const owner = p.owner ?? 'Other';
-      const val = p.holdings.reduce((s, h) => s + h.currentValue, 0);
+      const val = p.holdings.reduce((s, h) => s + h.currentValue ?? 0, 0);
       acc[owner] = (acc[owner] ?? 0) + val;
       return acc;
     }, {})
@@ -142,15 +142,15 @@ function Chart({ title, data, fmt }: { title: string; data: { name: string; valu
   const chartHeight = Math.max(data.length * barHeight + 16, 80);
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm">
+    <div className="bg-slate-800/70 rounded-xl border border-slate-700/50">
       <button
         onClick={() => setExpanded(v => !v)}
-        className="w-full flex items-center justify-between px-5 py-4 text-left"
+        className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-slate-700/20 transition-colors rounded-xl"
       >
-        <p className="text-sm font-semibold text-gray-700">{title}</p>
+        <p className="text-sm font-semibold text-slate-300">{title}</p>
         {expanded
-          ? <ChevronDown className="w-4 h-4 text-gray-400" />
-          : <ChevronRight className="w-4 h-4 text-gray-400" />}
+          ? <ChevronDown className="w-4 h-4 text-slate-500" />
+          : <ChevronRight className="w-4 h-4 text-slate-500" />}
       </button>
       {expanded && (
         <div className="px-5 pb-5">
@@ -166,11 +166,11 @@ function Chart({ title, data, fmt }: { title: string; data: { name: string; valu
                 type="category"
                 dataKey="name"
                 width={90}
-                tick={{ fontSize: 12, fill: '#6b7280' }}
+                tick={{ fontSize: 12, fill: '#64748b' }}
                 axisLine={false}
                 tickLine={false}
               />
-              <Tooltip content={<CustomTooltip fmt={fmt} />} cursor={{ fill: '#f9fafb' }} />
+              <Tooltip content={<CustomTooltip fmt={fmt} />} cursor={{ fill: '#1e293b' }} />
               <Bar dataKey="value" radius={[0, 6, 6, 0]}>
                 {data.map((entry, i) => (
                   <Cell key={i} fill={entry.color} />
