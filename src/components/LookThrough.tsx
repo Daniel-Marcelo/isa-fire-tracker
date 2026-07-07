@@ -72,7 +72,7 @@ export default function LookThrough({ data, fundHoldings }: Props) {
 
   const fundTotals = fundRegistry.map(fund => {
     const held = allHoldings.filter(h => matchesFund(h, fund.id));
-    return { ...fund, heldHoldings: held, total: held.reduce((s, h) => s + h.currentValue ?? 0, 0) };
+    return { ...fund, heldHoldings: held, total: held.reduce((s, h) => s + (h.currentValue ?? 0), 0) };
   });
 
   const isFundHolding = (h: { ticker?: string; name: string }) =>
@@ -83,14 +83,14 @@ export default function LookThrough({ data, fundHoldings }: Props) {
   );
 
   const directHoldings = allHoldings.filter(h => !isFundHolding(h) && !FUND_KEYWORDS.test(h.name) && h.ticker);
-  const totalPortfolio = allHoldings.reduce((s, h) => s + h.currentValue ?? 0, 0);
+  const totalPortfolio = allHoldings.reduce((s, h) => s + (h.currentValue ?? 0), 0);
 
   const rows = useMemo<ExposureRow[]>(() => {
     const map = new Map<string, ExposureRow>();
 
     fundRegistry.forEach(fund => {
       const userHoldings = allHoldings.filter(h => matchesFund(h, fund.id));
-      const total = userHoldings.reduce((s, h) => s + h.currentValue ?? 0, 0);
+      const total = userHoldings.reduce((s, h) => s + (h.currentValue ?? 0), 0);
       if (total === 0) return;
       fund.holdings.forEach(fh => {
         const contribution = total * (fh.weight / 100);
@@ -118,7 +118,7 @@ export default function LookThrough({ data, fundHoldings }: Props) {
       const existing = map.get(ticker);
       if (existing) {
         existing.directValue = h.currentValue ?? 0;
-        existing.totalValue = existing.fundValue + h.currentValue ?? 0;
+        existing.totalValue = existing.fundValue + (h.currentValue ?? 0);
       } else {
         map.set(ticker, {
           ticker,

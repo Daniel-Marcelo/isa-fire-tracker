@@ -61,7 +61,7 @@ export default function ExposureCharts({ data, fundHoldings }: Props) {
 
   fundRegistry.forEach(fund => {
     const userHoldings = allHoldings.filter(h => matchesFund(h, fund.id));
-    const total = userHoldings.reduce((s, h) => s + h.currentValue ?? 0, 0);
+    const total = userHoldings.reduce((s, h) => s + (h.currentValue ?? 0), 0);
     if (total === 0) return;
     fund.holdings.forEach(fh => {
       if (fh.ticker === 'OTHER') return;
@@ -73,8 +73,8 @@ export default function ExposureCharts({ data, fundHoldings }: Props) {
   });
 
   directHoldings.forEach(h => {
-    sectorMap.set('Direct', (sectorMap.get('Direct') ?? 0) + h.currentValue ?? 0);
-    countryMap.set('US', (countryMap.get('US') ?? 0) + h.currentValue ?? 0);
+    sectorMap.set('Direct', (sectorMap.get('Direct') ?? 0) + (h.currentValue ?? 0));
+    countryMap.set('US', (countryMap.get('US') ?? 0) + (h.currentValue ?? 0));
   });
 
   const total = Array.from(sectorMap.values()).reduce((s, v) => s + v, 0);

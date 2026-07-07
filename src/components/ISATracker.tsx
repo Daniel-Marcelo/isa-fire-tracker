@@ -40,7 +40,7 @@ export default function ISATracker({ data, rawData, onChange, livePrices = {}, f
   const { fmt, fmtShort, currency: userCurrency } = useCurrency();
 
   const totalValue = data.providers.reduce(
-    (sum, p) => sum + p.holdings.reduce((s, h) => s + h.currentValue ?? 0, 0),
+    (sum, p) => sum + p.holdings.reduce((s, h) => s + (h.currentValue ?? 0), 0),
     0
   );
 
@@ -196,7 +196,7 @@ const owners = ['All', ...OWNERS] as const;
         const PENSION_TYPES = new Set<string>(['SIPP', 'Workplace Pension']);
         const pensionTotal = data.providers
           .filter(p => PENSION_TYPES.has(p.accountType ?? ''))
-          .reduce((s, p) => s + p.holdings.reduce((h, holding) => h + holding.currentValue ?? 0, 0), 0);
+          .reduce((s, p) => s + p.holdings.reduce((h, holding) => h + (holding.currentValue ?? 0), 0), 0);
         const accessibleTotal = totalValue - pensionTotal;
         return (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -220,7 +220,7 @@ const owners = ['All', ...OWNERS] as const;
         const PENSION_TYPES = new Set<string>(['SIPP', 'Workplace Pension']);
         const pensionValue = data.providers
           .filter(p => PENSION_TYPES.has(p.accountType ?? ''))
-          .reduce((s, p) => s + p.holdings.reduce((h, holding) => h + holding.currentValue ?? 0, 0), 0);
+          .reduce((s, p) => s + p.holdings.reduce((h, holding) => h + (holding.currentValue ?? 0), 0), 0);
         const accessibleValue = totalValue - pensionValue;
         const swr = (data.fireSettings?.withdrawalRate ?? 4) / 100;
 
@@ -331,7 +331,7 @@ const owners = ['All', ...OWNERS] as const;
       )}
 
       {visibleProviders.map(provider => {
-        const providerTotal = provider.holdings.reduce((s, h) => s + h.currentValue ?? 0, 0);
+        const providerTotal = provider.holdings.reduce((s, h) => s + (h.currentValue ?? 0), 0);
         const providerCost = provider.holdings.reduce((s, h) => s + (h.costBasis ?? 0), 0);
         const gain = providerTotal - providerCost;
         const gainPct = providerCost > 0 ? (gain / providerCost) * 100 : 0;
@@ -577,7 +577,7 @@ const owners = ['All', ...OWNERS] as const;
                 return acc;
               }, {});
               return visibleProviders.map(p => {
-              const val = p.holdings.reduce((s, h) => s + h.currentValue ?? 0, 0);
+              const val = p.holdings.reduce((s, h) => s + (h.currentValue ?? 0), 0);
               const pct = totalValue > 0 ? (val / totalValue) * 100 : 0;
               const label = nameCounts[p.name] > 1 && p.accountType ? `${p.name} (${p.accountType})` : p.name;
               return (

@@ -155,11 +155,11 @@ export default function FIRECalculator({ data, onChange }: Props) {
 
   const accessibleValue = data.providers
     .filter(p => !p.accountType || ACCESSIBLE_TYPES.has(p.accountType))
-    .reduce((sum, p) => sum + p.holdings.reduce((s, h) => s + h.currentValue ?? 0, 0), 0);
+    .reduce((sum, p) => sum + p.holdings.reduce((s, h) => s + (h.currentValue ?? 0), 0), 0);
 
   const pensionValue = data.providers
     .filter(p => p.accountType && PENSION_TYPES.has(p.accountType))
-    .reduce((sum, p) => sum + p.holdings.reduce((s, h) => s + h.currentValue ?? 0, 0), 0);
+    .reduce((sum, p) => sum + p.holdings.reduce((s, h) => s + (h.currentValue ?? 0), 0), 0);
 
   const result = useMemo(
     () => project(s, accessibleValue, pensionValue),

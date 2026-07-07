@@ -83,7 +83,7 @@ export default function AllocationCharts({ data }: Props) {
   const providerData = Object.values(
     data.providers.reduce<Record<string, { name: string; value: number; color: string; _entries: { value: number; color: string }[] }>>((acc, p) => {
       const key = canonicalBroker(p.name);
-      const value = p.holdings.reduce((s, h) => s + h.currentValue ?? 0, 0);
+      const value = p.holdings.reduce((s, h) => s + (h.currentValue ?? 0), 0);
       const color = p.color || PROVIDER_COLORS[0];
       if (!acc[key]) {
         acc[key] = { name: key, value, color, _entries: [{ value, color }] };
@@ -102,7 +102,7 @@ export default function AllocationCharts({ data }: Props) {
   const accountTypeData = Object.entries(
     data.providers.reduce<Record<string, number>>((acc, p) => {
       const type = p.accountType ?? 'Other';
-      const val = p.holdings.reduce((s, h) => s + h.currentValue ?? 0, 0);
+      const val = p.holdings.reduce((s, h) => s + (h.currentValue ?? 0), 0);
       acc[type] = (acc[type] ?? 0) + val;
       return acc;
     }, {})
@@ -114,7 +114,7 @@ export default function AllocationCharts({ data }: Props) {
   const ownerData = Object.entries(
     data.providers.reduce<Record<string, number>>((acc, p) => {
       const owner = p.owner ?? 'Other';
-      const val = p.holdings.reduce((s, h) => s + h.currentValue ?? 0, 0);
+      const val = p.holdings.reduce((s, h) => s + (h.currentValue ?? 0), 0);
       acc[owner] = (acc[owner] ?? 0) + val;
       return acc;
     }, {})
