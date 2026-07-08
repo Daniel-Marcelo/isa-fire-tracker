@@ -1,6 +1,7 @@
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import type { AppData, FundHolding, UploadedFundHoldings } from '../types';
 import { useCurrency } from '../contexts/CurrencyContext';
+import { isCashType } from '../utils';
 
 interface Props {
   data: AppData;
@@ -50,7 +51,7 @@ export default function ExposureCharts({ data, fundHoldings }: Props) {
     holdings: u.holdings as FundHolding[],
   }));
 
-  const allHoldings = data.providers.flatMap(p => p.holdings);
+  const allHoldings = data.providers.filter(p => !isCashType(p.accountType)).flatMap(p => p.holdings);
   const isFundHolding = (h: { ticker?: string; name: string }) =>
     fundRegistry.some(f => matchesFund(h, f.id));
   const directHoldings = allHoldings.filter(h => !isFundHolding(h) && h.ticker);

@@ -56,3 +56,18 @@ export const PROVIDER_COLORS = [
 export function taxYearLabel(year: number): string {
   return `${year}/${String(year + 1).slice(2)}`;
 }
+
+export const ISA_ANNUAL_ALLOWANCE = 20000; // GBP, per person, per tax year (frozen at £20k since 2017/18)
+
+// Single source of truth for how account types split into pension vs accessible money.
+// Anything that is not a pension (including undefined accountType) counts as accessible.
+export const PENSION_ACCOUNT_TYPES = new Set<string>(['SIPP', 'Workplace Pension']);
+export const CASH_ACCOUNT_TYPES = new Set<string>(['Cash ISA', 'Savings']);
+
+export function isPensionType(t?: string): boolean {
+  return PENSION_ACCOUNT_TYPES.has(t ?? '');
+}
+
+export function isCashType(t?: string): boolean {
+  return CASH_ACCOUNT_TYPES.has(t ?? '');
+}

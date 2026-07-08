@@ -3,13 +3,16 @@ import { Routes, Route, Navigate, NavLink, useLocation } from 'react-router-dom'
 import { BarChart3, Flame, Download, Upload, Layers, LogOut, Cloud, CloudOff, RefreshCw, FolderOpen, Settings } from 'lucide-react';
 import type { User } from '@supabase/supabase-js';
 import type { AppData, UploadedFundHoldings } from './types';
-import { defaultData, exportData, importData } from './store';
+import { defaultData, exportData, importData, migrateAppData } from './store';
 import { supabase } from './lib/supabase';
 import { loadFromSupabase, saveToSupabase, loadFundHoldings, saveFundHolding, deleteFundHolding } from './lib/db';
+import { cacheAppData, readCachedAppData } from './lib/localCache';
 
 const ADMIN_EMAIL = import.meta.env.VITE_ADMIN_EMAIL as string | undefined;
 import { fetchLivePrices } from './lib/firebasePrices';
-import { fetchFxRates, convertAmount, type FxRates } from './lib/fxRates';
+import { fetchFxRates, type FxRates } from './lib/fxRates';
+import { withTodaySnapshots } from './lib/snapshots';
+import { applyLivePrices } from './lib/applyLivePrices';
 import { formatCurrency, formatCurrencyShort, SUPPORTED_CURRENCIES } from './utils';
 import { CurrencyContext } from './contexts/CurrencyContext';
 import ISATracker from './components/ISATracker';
@@ -28,6 +31,7 @@ export default function App() {
   const [data, setData] = useState<AppData>(defaultData);
   const [dataReady, setDataReady] = useState(false);
   const [syncState, setSyncState] = useState<SyncState>('idle');
+  const [degraded, setDegraded] = useState(false); // load failed: showing cache, saves blocked
   const [importError, setImportError] = useState<string | null>(null);
   const [livePrices, setLivePrices] = useState<Record<string, number>>({});
   const [livePricesUpdatedAt, setLivePricesUpdatedAt] = useState<Date | null>(null);
@@ -39,6 +43,13 @@ export default function App() {
   const loadedForUser = useRef<string | null>(null);
   const livePricesRef = useRef<Record<string, number>>({});
   const fxRatesRef = useRef<FxRates>({ GBP: 1 });
+  // scheduleSave closes over stale state, so it reads the degraded flag via a ref.
+  const degradedRef = useRef(false);
+
+  const setDegradedMode = useCallback((v: boolean) => {
+    degradedRef.current = v;
+    setDegraded(v);
+  }, []);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -61,70 +72,59 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  function applyLivePrices(base: AppData, prices: Record<string, number>, rates: FxRates): AppData {
-    const userCurrency = base.userSettings?.currency ?? 'GBP';
-
-    function conv(amount: number, from: string) {
-      return convertAmount(amount, from, userCurrency, rates);
-    }
-
-    return {
-      ...base,
-      providers: base.providers.map(provider => ({
-        ...provider,
-        holdings: provider.holdings.map(holding => {
-          const hCurrency = holding.currency ?? 'GBP';
-          const livePrice = holding.ticker ? prices[holding.ticker] : undefined;
-          const costBasis = holding.costBasis != null ? conv(holding.costBasis, hCurrency) : undefined;
-
-          if (livePrice !== undefined) {
-            const currentPrice = conv(livePrice, hCurrency);
-            const currentValue = holding.units != null
-              ? holding.units * currentPrice
-              : conv(holding.manualValue ?? 0, hCurrency);
-            return { ...holding, currentPrice, currentValue, ...(costBasis != null ? { costBasis } : {}) };
-          }
-
-          const currentValue = conv(holding.manualValue ?? 0, hCurrency);
-          return { ...holding, currentPrice: undefined, currentValue, ...(costBasis != null ? { costBasis } : {}) };
-        }),
-      })),
-    };
-  }
+  const loadData = useCallback((u: User) => {
+    setDataReady(false);
+    setSyncState('syncing');
+    Promise.all([loadFromSupabase(), loadFundHoldings()])
+      .then(([remote, funds]) => {
+        const loaded = remote ?? defaultData;
+        baseData.current = loaded;
+        setData(loaded);
+        setFundHoldings(funds);
+        cacheAppData(u.id, loaded);
+        setDegradedMode(false);
+        setSyncState('idle');
+        setDataReady(true);
+      })
+      .catch(() => {
+        // Fall back to the last known-good local copy; run it through
+        // migrateAppData in case it predates a schema change. Saves stay
+        // blocked either way so a failed load can never overwrite the
+        // remote data with an empty or stale portfolio.
+        const cached = readCachedAppData(u.id);
+        const fallback = cached ? migrateAppData(cached) : defaultData;
+        baseData.current = fallback;
+        setData(fallback);
+        setDegradedMode(true);
+        setSyncState('error');
+        setDataReady(true);
+      });
+  }, [setDegradedMode]);
 
   useEffect(() => {
     if (!user) { loadedForUser.current = null; return; }
     if (loadedForUser.current === user.id) return;
     loadedForUser.current = user.id;
-    setDataReady(false);
-    setSyncState('syncing');
-    Promise.all([loadFromSupabase(), loadFundHoldings()])
-      .then(([remote, funds]) => {
-        const loaded = remote ? {
-          ...defaultData,
-          ...remote,
-          fireSettings: { ...defaultData.fireSettings, ...remote.fireSettings },
-          userSettings: { ...defaultData.userSettings, ...remote.userSettings },
-        } : defaultData;
-        baseData.current = loaded;
-        setData(loaded);
-        setFundHoldings(funds);
-        setSyncState('idle');
-        setDataReady(true);
-      })
-      .catch(() => {
-        setSyncState('error');
-        setData(defaultData);
-        setDataReady(true);
-      });
+    loadData(user);
+  }, [user, loadData]);
+
+  const scheduleSave = useCallback((next: AppData) => {
+    if (!user) return;
+    if (degradedRef.current) return; // never save over remote state we couldn't load
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      setSyncState('syncing');
+      saveToSupabase(next)
+        .then(() => {
+          cacheAppData(user.id, next);
+          setSyncState('idle');
+        })
+        .catch(() => setSyncState('error'));
+    }, 1000);
   }, [user]);
 
   const refreshLivePrices = useCallback(async (base: AppData) => {
-    const tickers = [
-      ...new Set(
-        base.providers.flatMap(p => p.holdings.map(h => h.ticker).filter(Boolean) as string[])
-      ),
-    ];
+    const tickers = [...new Set(base.providers.flatMap(p => p.holdings.map(h => h.ticker).filter(Boolean) as string[]))];
     setLivePricesLoading(true);
     try {
       const [prices, rates] = await Promise.all([
@@ -135,12 +135,19 @@ export default function App() {
       fxRatesRef.current = rates;
       setLivePrices(prices);
       setFxRates(rates);
-      setData(applyLivePrices(base, prices, rates));
+      const snapped = withTodaySnapshots(base, prices, rates);
+      if (snapped !== base) {
+        baseData.current = snapped;
+        scheduleSave(snapped);
+      }
+      setData(applyLivePrices(snapped, prices, rates));
       setLivePricesUpdatedAt(new Date());
+    } catch (err) {
+      console.warn('Live price refresh failed:', err);
     } finally {
       setLivePricesLoading(false);
     }
-  }, []);
+  }, [scheduleSave]);
 
   useEffect(() => {
     if (!dataReady) return;
@@ -149,21 +156,11 @@ export default function App() {
     return () => clearInterval(interval);
   }, [dataReady, refreshLivePrices]);
 
-  const scheduleSave = useCallback((next: AppData) => {
-    if (!user) return;
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => {
-      setSyncState('syncing');
-      saveToSupabase(next)
-        .then(() => setSyncState('idle'))
-        .catch(() => setSyncState('error'));
-    }, 1000);
-  }, [user]);
-
   const handleChange = useCallback((next: AppData) => {
-    baseData.current = next;
-    setData(applyLivePrices(next, livePricesRef.current, fxRatesRef.current));
-    scheduleSave(next);
+    const snapped = withTodaySnapshots(next, livePricesRef.current, fxRatesRef.current);
+    baseData.current = snapped;
+    setData(applyLivePrices(snapped, livePricesRef.current, fxRatesRef.current));
+    scheduleSave(snapped);
   }, [scheduleSave]);
 
   function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
@@ -256,7 +253,7 @@ export default function App() {
                         currency={currency}
                         currencies={SUPPORTED_CURRENCIES}
                         onCurrencyChange={handleCurrencyChange}
-                        onExport={() => exportData(data)}
+                        onExport={() => exportData(baseData.current)}
                         onImport={handleImport}
                         onSignOut={() => supabase.auth.signOut()}
                         isAdmin={isAdmin}
@@ -272,12 +269,28 @@ export default function App() {
                   <BottomTabLink to="/fire" icon={<Flame size={20} />} label="FIRE" />
                 </nav>
 
+                {degraded && (
+                  <div className="max-w-5xl mx-auto px-4 pt-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3 bg-amber-900/30 border border-amber-800/40 rounded-xl px-4 py-2.5">
+                      <span className="text-sm text-amber-300">
+                        Couldn't reach the server — showing your last synced data (read-only).
+                      </span>
+                      <button
+                        onClick={() => loadData(user)}
+                        className="text-sm font-medium text-amber-200 border border-amber-700/60 rounded-lg px-3 py-1 hover:bg-amber-900/40 transition-colors"
+                      >
+                        Retry
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 <main className="max-w-5xl mx-auto px-4 py-6 pb-24 sm:pb-8" style={{paddingBottom: 'calc(6rem + env(safe-area-inset-bottom))'}}>
                   <Routes>
                     <Route path="/" element={<ISATracker data={data} rawData={baseData.current} onChange={handleChange} livePrices={livePrices} fxRates={fxRates} />} />
                     <Route path="/lookthrough" element={<LookThrough data={data} fundHoldings={fundHoldings} />} />
                     {isAdmin && <Route path="/funds" element={<FundManager fundHoldings={fundHoldings} onUpdateFundHoldings={handleUpdateFundHoldings} onDeleteFundHoldings={handleDeleteFundHoldings} />} />}
-                    <Route path="/fire" element={<FIRECalculator data={data} onChange={handleChange} />} />
+                    <Route path="/fire" element={<FIRECalculator data={data} rawData={baseData.current} onChange={handleChange} />} />
                     <Route path="*" element={<Navigate to="/" replace />} />
                   </Routes>
                 </main>

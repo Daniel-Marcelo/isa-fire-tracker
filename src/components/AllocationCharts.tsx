@@ -14,6 +14,8 @@ const ACCOUNT_TYPE_COLOURS: Record<string, string> = {
   'SIPP':               '#10b981',
   'GIA':                '#f59e0b',
   'Workplace Pension':  '#3b82f6',
+  'Cash ISA':           '#22d3ee',
+  'Savings':            '#64748b',
   'Other':              '#94a3b8',
 };
 

@@ -1,135 +1,19 @@
 import React, { useState, useMemo, useRef } from 'react';
 import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
+  AreaChart, Area, ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ReferenceLine, ResponsiveContainer, Legend,
 } from 'recharts';
 import type { AppData, FireSettings } from '../types';
 import { useCurrency } from '../contexts/CurrencyContext';
+import { project } from '../lib/fireProjection';
+import { runMonteCarlo } from '../lib/monteCarlo';
+import { isPensionType } from '../utils';
 
 interface Props {
   data: AppData;
+  rawData: AppData;
   onChange: (data: AppData) => void;
 }
-
-interface ProjectionResult {
-  points: { age: number; accessible: number; pension: number; combined: number }[];
-  earlyFireAge: number | null;
-  fullFireAge: number | null;
-}
-
-const DEFAULT_SWR = 0.035;
-
-function realMonthlyRate(nominalPct: number, inflationPct: number): number {
-  const realAnnual = (1 + nominalPct / 100) / (1 + inflationPct / 100) - 1;
-  return Math.pow(1 + realAnnual, 1 / 12) - 1;
-}
-
-function findFireAges(
-  settings: FireSettings,
-  accessibleStart: number,
-  pensionStart: number,
-): { earlyFireAge: number | null; fullFireAge: number | null } {
-  const { currentAge, monthlyContribution, monthlyPensionContribution, pensionAccessAge, expectedAnnualReturn, inflationRate, annualExpensesInRetirement } = settings;
-  const mRate = realMonthlyRate(expectedAnnualReturn, inflationRate);
-  const totalMonthlyPension = monthlyPensionContribution ?? 0;
-  const monthlySpend = annualExpensesInRetirement / 12;
-  const swr = (settings.withdrawalRate ?? DEFAULT_SWR * 100) / 100;
-  const pensionTarget = annualExpensesInRetirement / swr;
-
-  let accessible = accessibleStart;
-  let pension = pensionStart;
-  let earlyFireAge: number | null = null;
-  let fullFireAge: number | null = null;
-
-  for (let m = 0; m <= 600; m++) {
-    const age = currentAge + m / 12;
-
-    if (m % 12 === 0) {
-      if (earlyFireAge === null && age < pensionAccessAge) {
-        const monthsUntilPension = Math.round((pensionAccessAge - age) * 12);
-        let sim = accessible;
-        let bridgeOk = true;
-        for (let i = 0; i < monthsUntilPension; i++) {
-          sim = sim * (1 + mRate) - monthlySpend;
-          if (sim < 0) { bridgeOk = false; break; }
-        }
-        if (bridgeOk) {
-          let simPension = pension;
-          for (let i = 0; i < monthsUntilPension; i++) {
-            simPension = simPension * (1 + mRate);
-          }
-          if (sim + simPension >= pensionTarget) earlyFireAge = age;
-        }
-      }
-
-      if (fullFireAge === null && age >= pensionAccessAge) {
-        if (Math.max(accessible, 0) + pension >= pensionTarget) fullFireAge = age;
-      }
-
-      if (earlyFireAge !== null && fullFireAge !== null) break;
-    }
-
-    const retiredYet = earlyFireAge !== null && age >= earlyFireAge;
-    accessible = accessible * (1 + mRate) + (retiredYet ? 0 : monthlyContribution);
-    pension = pension * (1 + mRate) + (retiredYet ? 0 : totalMonthlyPension);
-  }
-
-  return { earlyFireAge, fullFireAge };
-}
-
-function project(
-  settings: FireSettings,
-  accessibleStart: number,
-  pensionStart: number,
-): ProjectionResult {
-  const { currentAge, monthlyContribution, monthlyPensionContribution, pensionAccessAge, expectedAnnualReturn, inflationRate, annualExpensesInRetirement } = settings;
-
-  const mRate = realMonthlyRate(expectedAnnualReturn, inflationRate);
-  const totalMonthlyPension = monthlyPensionContribution ?? 0;
-  const monthlySpend = annualExpensesInRetirement / 12;
-
-  const { earlyFireAge, fullFireAge } = findFireAges(settings, accessibleStart, pensionStart);
-  const retireAge = Math.min(earlyFireAge ?? Infinity, fullFireAge ?? Infinity);
-
-  const points: ProjectionResult['points'] = [];
-  let accessible = accessibleStart;
-  let pension = pensionStart;
-
-  for (let m = 0; m <= 600; m++) {
-    const age = currentAge + m / 12;
-    const retired = isFinite(retireAge) && age >= retireAge;
-    const pensionUnlockedForDrawdown = age >= pensionAccessAge;
-
-    if (m % 12 === 0) {
-      points.push({
-        age: Math.round(age),
-        accessible: Math.round(Math.max(accessible, 0)),
-        pension: Math.round(Math.max(pension, 0)),
-        combined: Math.round(Math.max(accessible, 0) + Math.max(pension, 0)),
-      });
-    }
-
-    if (retired) {
-      if (!pensionUnlockedForDrawdown) {
-        accessible = accessible * (1 + mRate) - monthlySpend;
-        pension = pension * (1 + mRate);
-      } else {
-        const total = Math.max(accessible + pension, 0);
-        const accRatio = total > 0 ? Math.max(accessible, 0) / total : 0;
-        accessible = accessible * (1 + mRate) - monthlySpend * accRatio;
-        pension = pension * (1 + mRate) - monthlySpend * (1 - accRatio);
-      }
-    } else {
-      accessible = accessible * (1 + mRate) + monthlyContribution;
-      pension = pension * (1 + mRate) + totalMonthlyPension;
-    }
-  }
-
-  return { points, earlyFireAge, fullFireAge };
-}
-
-const ACCESSIBLE_TYPES = new Set(['ISA', 'GIA']);
-const PENSION_TYPES = new Set(['SIPP', 'Workplace Pension']);
 
 const CHART_TOOLTIP_STYLE = {
   contentStyle: {
@@ -144,26 +28,34 @@ const CHART_TOOLTIP_STYLE = {
   itemStyle: { color: '#cbd5e1' },
 };
 
-export default function FIRECalculator({ data, onChange }: Props) {
+export default function FIRECalculator({ data, rawData, onChange }: Props) {
   const s = data.fireSettings;
   const { fmt, fmtShort } = useCurrency();
   const [activeTab, setActiveTab] = useState<'split' | 'combined'>('split');
 
+  // Write through rawData, never data: data's holdings carry display-converted
+  // costBasis and derived values that must not become the canonical state.
   function update(patch: Partial<FireSettings>) {
-    onChange({ ...data, fireSettings: { ...s, ...patch } });
+    onChange({ ...rawData, fireSettings: { ...rawData.fireSettings, ...patch } });
   }
 
   const accessibleValue = data.providers
-    .filter(p => !p.accountType || ACCESSIBLE_TYPES.has(p.accountType))
+    .filter(p => !isPensionType(p.accountType))
     .reduce((sum, p) => sum + p.holdings.reduce((s, h) => s + (h.currentValue ?? 0), 0), 0);
 
   const pensionValue = data.providers
-    .filter(p => p.accountType && PENSION_TYPES.has(p.accountType))
+    .filter(p => isPensionType(p.accountType))
     .reduce((sum, p) => sum + p.holdings.reduce((s, h) => s + (h.currentValue ?? 0), 0), 0);
 
   const result = useMemo(
     () => project(s, accessibleValue, pensionValue),
     [s, accessibleValue, pensionValue],
+  );
+
+  const mcRetireAge = result.earlyFireAge ?? result.fullFireAge;
+  const mc = useMemo(
+    () => mcRetireAge != null ? runMonteCarlo(s, accessibleValue, pensionValue, mcRetireAge) : null,
+    [s, accessibleValue, pensionValue, mcRetireAge],
   );
 
   const currentYear = new Date().getFullYear();
@@ -179,15 +71,16 @@ export default function FIRECalculator({ data, onChange }: Props) {
           <NumberInput label="Inflation rate (%/yr)" value={s.inflationRate} min={0} max={20} step={0.5} onChange={v => update({ inflationRate: v })} suffix="%" hint="Subtracted from nominal return. All values in today's money." />
           <NumberInput label="Pension access age" value={s.pensionAccessAge ?? 57} min={55} max={70} onChange={v => update({ pensionAccessAge: v })} />
           <NumberInput label="Safe withdrawal rate (%)" value={s.withdrawalRate ?? 3.5} min={2} max={6} step={0.1} onChange={v => update({ withdrawalRate: v })} suffix="%" hint={`FIRE pot needed: ${fmt(s.annualExpensesInRetirement / ((s.withdrawalRate ?? 3.5) / 100))}`} />
+          <NumberInput label="Return volatility (%/yr)" value={s.returnVolatility ?? 15} min={0} max={50} step={1} onChange={v => update({ returnVolatility: v })} suffix="%" hint="Annual std dev. All-equity ≈ 15–18, 60/40 ≈ 10, cash ≈ 1" />
         </div>
       </div>
 
       {/* Pot summary */}
       <div className="grid grid-cols-2 gap-3">
         <div className="bg-slate-800/70 rounded-xl border border-slate-700/50 p-5">
-          <p className="text-xs font-medium text-indigo-400 uppercase tracking-wide mb-1">ISA / GIA</p>
+          <p className="text-xs font-medium text-indigo-400 uppercase tracking-wide mb-1">ISA / GIA / Cash</p>
           <p className="text-2xl font-bold text-slate-50 tabular-nums">{fmt(accessibleValue)}</p>
-          <p className="text-xs text-slate-600 mt-1">From holdings</p>
+          <p className="text-xs text-slate-600 mt-1">From holdings · growth assumption applies to the whole pot, incl. cash</p>
           <div className="mt-4 pt-3 border-t border-slate-700/50">
             <p className="text-xs font-medium text-slate-500 mb-2">Monthly contributions</p>
             <NumberInput label="" value={s.monthlyContribution} min={0} step={50} onChange={v => update({ monthlyContribution: v })} prefix="£" />
@@ -241,6 +134,54 @@ export default function FIRECalculator({ data, onChange }: Props) {
           </div>
         );
       })()}
+
+      {/* Monte Carlo */}
+      <div className="bg-slate-800/70 rounded-xl border border-slate-700/50 p-5">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h3 className="font-semibold text-slate-100">Market risk</h3>
+            <p className="text-xs text-slate-600 mt-0.5">
+              {mc
+                ? `${mc.runs.toLocaleString()} simulated market histories at ${(s.returnVolatility ?? 15).toFixed(0)}% volatility`
+                : 'Needs a reachable FIRE age to simulate'}
+            </p>
+          </div>
+          <div className="text-right">
+            <p className={`text-3xl font-bold tabular-nums ${
+              mc == null ? 'text-slate-600'
+                : mc.successRate >= 0.9 ? 'text-green-400'
+                : mc.successRate >= 0.75 ? 'text-amber-400'
+                : 'text-red-400'
+            }`}>
+              {mc ? `${(mc.successRate * 100).toFixed(0)}%` : '—'}
+            </p>
+            <p className="text-xs text-slate-500">chance your money lasts to 95</p>
+          </div>
+        </div>
+        {mc && mc.bands.length > 1 && (
+          <div className="mt-4">
+            <ResponsiveContainer width="100%" height={220}>
+              <ComposedChart data={mc.bands} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                <XAxis dataKey="age" tick={{ fontSize: 11, fill: '#64748b' }} />
+                <YAxis tick={{ fontSize: 11, fill: '#64748b' }} tickFormatter={fmtShort} width={70} />
+                <Tooltip {...CHART_TOOLTIP_STYLE} formatter={(v) => fmt(Number(v))} labelFormatter={l => `Age ${l}`} />
+                <ReferenceLine x={s.pensionAccessAge ?? 57} stroke="#a78bfa" strokeDasharray="4 3" strokeOpacity={0.7} />
+                {mcRetireAge != null && (
+                  <ReferenceLine x={Math.round(mcRetireAge)} stroke="#4ade80" strokeDasharray="4 3" strokeOpacity={0.7} />
+                )}
+                <Line type="monotone" dataKey="p90" stroke="#34d399" strokeWidth={1} dot={false} strokeOpacity={0.6} name="90th percentile" />
+                <Line type="monotone" dataKey="p50" stroke="#6366f1" strokeWidth={2} dot={false} name="Median" />
+                <Line type="monotone" dataKey="p10" stroke="#f87171" strokeWidth={1} dot={false} strokeOpacity={0.7} name="10th percentile" />
+                <Legend wrapperStyle={{ fontSize: 12, color: '#94a3b8' }} />
+              </ComposedChart>
+            </ResponsiveContainer>
+            <p className="text-xs text-slate-600 mt-2">
+              The median sits below the deterministic projection by design — volatility drags compound growth. A path fails if the ISA/GIA pot empties before pension access, or everything empties before 95.
+            </p>
+          </div>
+        )}
+      </div>
 
       {/* Chart */}
       <div className="bg-slate-800/70 rounded-xl border border-slate-700/50 p-5">

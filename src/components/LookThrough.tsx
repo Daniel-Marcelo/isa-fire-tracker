@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { ChevronDown, ChevronRight, Upload } from 'lucide-react';
 import type { AppData, FundHolding, UploadedFundHoldings } from '../types';
 import { useCurrency } from '../contexts/CurrencyContext';
+import { isCashType } from '../utils';
 import ExposureCharts from './ExposureCharts';
 
 interface Props {
@@ -68,7 +69,9 @@ export default function LookThrough({ data, fundHoldings }: Props) {
     })),
   [fundHoldings]);
 
-  const allHoldings = data.providers.flatMap(p => p.holdings);
+  // Cash accounts have no market exposure; a savings account named e.g. "Income
+  // Bonds" would otherwise trip FUND_KEYWORDS and show up as an unmatched fund.
+  const allHoldings = data.providers.filter(p => !isCashType(p.accountType)).flatMap(p => p.holdings);
 
   const fundTotals = fundRegistry.map(fund => {
     const held = allHoldings.filter(h => matchesFund(h, fund.id));

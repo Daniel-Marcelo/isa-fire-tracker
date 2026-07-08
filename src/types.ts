@@ -11,7 +11,7 @@ export interface Holding {
   currentValue?: number;
 }
 
-export type AccountType = 'ISA' | 'SIPP' | 'GIA' | 'Workplace Pension';
+export type AccountType = 'ISA' | 'SIPP' | 'GIA' | 'Workplace Pension' | 'Cash ISA' | 'Savings';
 
 export interface Provider {
   id: string;
@@ -21,12 +21,22 @@ export interface Provider {
   color: string;
   holdings: Holding[];
   snapshots: Snapshot[];
+  dividends?: DividendRecord[]; // from CSV imports; absent on pre-feature data
   lastCsvImport?: string; // ISO datetime of most recent CSV import
 }
 
 export interface Snapshot {
   date: string; // ISO date string
   totalValue: number;
+}
+
+export interface DividendRecord {
+  id: string;       // dedupe key — broker tx id if present, else date|ticker|amount
+  date: string;     // ISO date YYYY-MM-DD
+  ticker: string;
+  name?: string;
+  amount: number;   // net cash received, in `currency`
+  currency: string; // ISO 4217
 }
 
 export interface FireSettings {
@@ -40,10 +50,16 @@ export interface FireSettings {
   inflationRate: number;
   annualExpensesInRetirement: number;
   withdrawalRate: number;
+  returnVolatility?: number; // annual return std dev in %, for Monte Carlo (default 15)
 }
 
 export interface UserSettings {
   currency: string; // ISO 4217 currency code, e.g. 'GBP', 'USD', 'EUR'
+}
+
+export interface AllocationTarget {
+  key: string;       // uppercase ticker, or exact holding name for ticker-less positions
+  targetPct: number; // 0..100; treated as a weight if the sum isn't 100
 }
 
 export interface AppData {
@@ -52,6 +68,7 @@ export interface AppData {
   contributions: TaxYearContribution[];
   fireSettings: FireSettings;
   userSettings: UserSettings;
+  targets: AllocationTarget[];
 }
 
 export interface TaxYearContribution {

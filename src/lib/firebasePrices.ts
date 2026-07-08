@@ -16,6 +16,15 @@ function extractString(field: unknown): string | null {
   return null;
 }
 
+// The feed prices LSE stocks in pence (currency "GBp" or "GBX"). Normalise to pounds
+// so every price leaving this module is in a major-unit ISO currency.
+function normalisePence(price: number | undefined, currency: string | undefined): { price: number | undefined; currency: string | undefined } {
+  if (price != null && (currency === 'GBp' || currency === 'GBX')) {
+    return { price: price / 100, currency: 'GBP' };
+  }
+  return { price, currency };
+}
+
 export interface TickerInfo {
   price: number;
   name?: string;
@@ -29,24 +38,31 @@ export interface StockResult {
   currency?: string;
 }
 
-// Cache the full stock list so we only fetch it once per session
+// Cache the full stock list so we don't refetch on every call, but refresh periodically
+// so "live" prices actually update within a session.
 let stockListCache: StockResult[] | null = null;
+let stockListFetchedAt = 0;
+const STOCK_CACHE_TTL_MS = 4 * 60 * 1000; // refresh interval in App.tsx is 5 min
 
 async function getAllStocks(): Promise<StockResult[]> {
-  if (stockListCache) return stockListCache;
+  if (stockListCache && Date.now() - stockListFetchedAt < STOCK_CACHE_TTL_MS) return stockListCache;
   const res = await fetch(`${FIRESTORE_BASE}/stocks?pageSize=300`);
-  if (!res.ok) return [];
+  if (!res.ok) return stockListCache ?? []; // keep stale data on failure, don't blank out
   const json = await res.json();
   const docs: StockResult[] = (json.documents ?? []).map((doc: Record<string, unknown>) => {
     const fields = doc.fields as Record<string, unknown> | undefined;
+    const rawPrice = extractNumber(fields?.latestPrice) ?? undefined;
+    const rawCurrency = extractString(fields?.currency) ?? undefined;
+    const { price, currency } = normalisePence(rawPrice, rawCurrency);
     return {
       symbol: extractString(fields?.symbol) ?? '',
       name: extractString(fields?.name) ?? '',
-      price: extractNumber(fields?.latestPrice) ?? undefined,
-      currency: extractString(fields?.currency) ?? undefined,
+      price,
+      currency,
     };
   }).filter((s: StockResult) => s.symbol);
   stockListCache = docs;
+  stockListFetchedAt = Date.now();
   return docs;
 }
 
@@ -75,11 +91,13 @@ export async function fetchTickerInfo(ticker: string): Promise<TickerInfo | null
   const res = await fetch(`${FIRESTORE_BASE}/stocks/${ticker}`);
   if (!res.ok) return null;
   const doc = await res.json();
-  const price = extractNumber(doc?.fields?.latestPrice);
-  if (price === null || price === 0) return null;
+  const rawPrice = extractNumber(doc?.fields?.latestPrice);
+  if (rawPrice === null || rawPrice === 0) return null;
+  const rawCurrency = extractString(doc?.fields?.currency) ?? undefined;
+  const { price, currency } = normalisePence(rawPrice, rawCurrency);
   return {
-    price,
+    price: price as number,
     name: extractString(doc?.fields?.name) ?? undefined,
-    currency: extractString(doc?.fields?.currency) ?? undefined,
+    currency,
   };
 }

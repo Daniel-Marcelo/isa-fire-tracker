@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Plus, Pencil, Trash2, ChevronDown, ChevronRight, TrendingUp, TrendingDown, Upload } from 'lucide-react';
 import type { AppData, Provider, Holding, AccountType } from '../types';
 import { fetchTickerInfo, searchStocks } from '../lib/firebasePrices';
-import { uid, PROVIDER_COLORS, getCurrencySymbol } from '../utils';
+import { uid, PROVIDER_COLORS, getCurrencySymbol, isPensionType, isCashType, SUPPORTED_CURRENCIES } from '../utils';
 import { useCurrency } from '../contexts/CurrencyContext';
 import { convertAmount, type FxRates } from '../lib/fxRates';
 import Modal, { ConfirmModal } from './Modal';
@@ -10,7 +10,10 @@ import Dropdown from './Dropdown';
 import PerformanceChart from './PerformanceChart';
 import AllocationCharts from './AllocationCharts';
 import CSVImportModal from './CSVImportModal';
-import type { ParsedHolding } from '../lib/csvParsers';
+import AllowanceCard from './AllowanceCard';
+import RebalanceCard from './RebalanceCard';
+import type { ParsedImport } from '../lib/csvParsers';
+import IncomeCard from './IncomeCard';
 
 
 function vibrate(pattern: number | number[]) {
@@ -113,29 +116,21 @@ const owners = ['All', ...OWNERS] as const;
         const holdings = existing
           ? p.holdings.map(h => h.id === existing.id ? { ...h, ...form } : h)
           : [...p.holdings, { id: uid(), ...form }];
-        const totalVal = holdings.reduce((s, h) => {
-          const val = h.currentValue ?? h.manualValue ?? 0;
-          return s + convertAmount(val, h.currency ?? 'GBP', 'GBP', fxRates);
-        }, 0);
-        const snapshots = [
-          ...p.snapshots.filter(s => s.date !== new Date().toISOString().slice(0, 10)),
-          { date: new Date().toISOString().slice(0, 10), totalValue: totalVal },
-        ].sort((a, b) => a.date.localeCompare(b.date));
-        return { ...p, holdings, snapshots };
+        return { ...p, holdings };
       }),
     });
     setShowAddHolding(null);
     setEditHolding(null);
   }
 
-  function handleCSVImport(providerId: string, parsed: ParsedHolding[], mergeMode: 'replace' | 'merge') {
+  function handleCSVImport(providerId: string, parsed: ParsedImport, mergeMode: 'replace' | 'merge') {
     onChange({
       ...rawData,
       providers: rawData.providers.map(p => {
         if (p.id !== providerId) return p;
         let holdings: Holding[];
         if (mergeMode === 'replace') {
-          holdings = parsed.map(ph => ({
+          holdings = parsed.holdings.map(ph => ({
             id: uid(),
             name: ph.name,
             ticker: ph.ticker,
@@ -145,7 +140,7 @@ const owners = ['All', ...OWNERS] as const;
           }));
         } else {
           const existing = [...p.holdings];
-          for (const ph of parsed) {
+          for (const ph of parsed.holdings) {
             const match = existing.find(h => h.ticker?.toUpperCase() === ph.ticker.toUpperCase());
             if (match) {
               match.units = (match.units ?? 0) + ph.units;
@@ -164,15 +159,17 @@ const owners = ['All', ...OWNERS] as const;
           }
           holdings = existing;
         }
-        const totalVal = holdings.reduce((s, h) => {
-          const val = h.currentValue ?? h.manualValue ?? 0;
-          return s + convertAmount(val, h.currency ?? 'GBP', 'GBP', fxRates);
-        }, 0);
-        const snapshots = [
-          ...p.snapshots.filter(s => s.date !== new Date().toISOString().slice(0, 10)),
-          { date: new Date().toISOString().slice(0, 10), totalValue: totalVal },
-        ].sort((a, b) => a.date.localeCompare(b.date));
-        return { ...p, holdings, snapshots, lastCsvImport: new Date().toISOString() };
+        // Dividends: replace mirrors holdings; merge unions by id so re-importing
+        // an overlapping export never double-counts income.
+        let dividends;
+        if (mergeMode === 'replace') {
+          dividends = parsed.dividends;
+        } else {
+          const seen = new Set((p.dividends ?? []).map(d => d.id));
+          dividends = [...(p.dividends ?? []), ...parsed.dividends.filter(d => !seen.has(d.id))];
+        }
+        dividends = [...dividends].sort((a, b) => a.date.localeCompare(b.date));
+        return { ...p, holdings, dividends, lastCsvImport: new Date().toISOString() };
       }),
     });
   }
@@ -193,9 +190,8 @@ const owners = ['All', ...OWNERS] as const;
     <div className="space-y-4">
       {/* Summary cards */}
       {(() => {
-        const PENSION_TYPES = new Set<string>(['SIPP', 'Workplace Pension']);
         const pensionTotal = data.providers
-          .filter(p => PENSION_TYPES.has(p.accountType ?? ''))
+          .filter(p => isPensionType(p.accountType))
           .reduce((s, p) => s + p.holdings.reduce((h, holding) => h + (holding.currentValue ?? 0), 0), 0);
         const accessibleTotal = totalValue - pensionTotal;
         return (
@@ -209,17 +205,21 @@ const owners = ['All', ...OWNERS] as const;
               positive={totalGain >= 0}
               colored
             />
-            <SummaryCard label="ISA / GIA" value={fmtShort(accessibleTotal)} fullValue={fmt(accessibleTotal)} sub={totalValue > 0 ? `${((accessibleTotal / totalValue) * 100).toFixed(1)}% of portfolio` : undefined} />
+            <SummaryCard label="ISA / GIA / Cash" value={fmtShort(accessibleTotal)} fullValue={fmt(accessibleTotal)} sub={totalValue > 0 ? `${((accessibleTotal / totalValue) * 100).toFixed(1)}% of portfolio` : undefined} />
             <SummaryCard label="Pension / SIPP" value={fmtShort(pensionTotal)} fullValue={fmt(pensionTotal)} sub={totalValue > 0 ? `${((pensionTotal / totalValue) * 100).toFixed(1)}% of portfolio` : undefined} />
           </div>
         );
       })()}
 
+      {/* ISA allowance */}
+      {(data.providers.length > 0 || (rawData.contributions ?? []).length > 0) && (
+        <AllowanceCard rawData={rawData} onChange={onChange} />
+      )}
+
       {/* Portfolio income snapshot */}
       {totalValue > 0 && (() => {
-        const PENSION_TYPES = new Set<string>(['SIPP', 'Workplace Pension']);
         const pensionValue = data.providers
-          .filter(p => PENSION_TYPES.has(p.accountType ?? ''))
+          .filter(p => isPensionType(p.accountType))
           .reduce((s, p) => s + p.holdings.reduce((h, holding) => h + (holding.currentValue ?? 0), 0), 0);
         const accessibleValue = totalValue - pensionValue;
         const swr = (data.fireSettings?.withdrawalRate ?? 4) / 100;
@@ -235,7 +235,7 @@ const owners = ['All', ...OWNERS] as const;
               <p className="text-xs text-slate-500 mt-1">Withdraw this each year indefinitely (Trinity Study)</p>
               <div className="mt-3 pt-3 border-t border-slate-700/50 grid grid-cols-2 gap-2">
                 <div>
-                  <p className="text-xs text-slate-500">ISA / GIA</p>
+                  <p className="text-xs text-slate-500">ISA / GIA / Cash</p>
                   <p className="text-sm font-semibold text-slate-200 tabular-nums">{fmtShort(accessibleValue * swr)}</p>
                 </div>
                 <div>
@@ -253,7 +253,7 @@ const owners = ['All', ...OWNERS] as const;
               <p className="text-xs text-slate-500 mt-1">At 8% growth rate · {fmtShort(totalValue * 0.08 / 12)}/mo</p>
               <div className="mt-3 pt-3 border-t border-slate-700/50 grid grid-cols-2 gap-2">
                 <div>
-                  <p className="text-xs text-slate-500">ISA / GIA</p>
+                  <p className="text-xs text-slate-500">ISA / GIA / Cash</p>
                   <p className="text-sm font-semibold text-slate-200 tabular-nums">{fmtShort(accessibleValue * 0.08)}</p>
                 </div>
                 <div>
@@ -266,8 +266,14 @@ const owners = ['All', ...OWNERS] as const;
         );
       })()}
 
+      {/* Dividend income */}
+      <IncomeCard data={data} fxRates={fxRates} />
+
       {/* Allocation charts */}
       {totalValue > 0 && <AllocationCharts data={data} />}
+
+      {/* Target allocation & rebalancing */}
+      {totalValue > 0 && <RebalanceCard data={data} rawData={rawData} onChange={onChange} />}
 
       {/* Performance chart */}
       {data.providers.some(p => p.snapshots.length > 1) && (
@@ -645,6 +651,7 @@ const owners = ['All', ...OWNERS] as const;
       {/* Add/Edit Holding Modal */}
       {showAddHolding && (
         <HoldingModal
+          cashAccount={isCashType(data.providers.find(p => p.id === showAddHolding)?.accountType)}
           onSave={form => saveHolding(showAddHolding, form)}
           onClose={() => setShowAddHolding(null)}
           livePrices={livePrices}
@@ -653,6 +660,7 @@ const owners = ['All', ...OWNERS] as const;
       {editHolding && (
         <HoldingModal
           existing={editHolding.holding}
+          cashAccount={isCashType(data.providers.find(p => p.id === editHolding.providerId)?.accountType)}
           onSave={form => saveHolding(editHolding.providerId, form, editHolding.holding)}
           onClose={() => setEditHolding(null)}
           livePrices={livePrices}
@@ -677,7 +685,7 @@ function SummaryCard({ label, value, fullValue, sub, positive, colored }: {
   );
 }
 
-const ACCOUNT_TYPES: AccountType[] = ['ISA', 'SIPP', 'GIA', 'Workplace Pension'];
+const ACCOUNT_TYPES: AccountType[] = ['ISA', 'SIPP', 'GIA', 'Workplace Pension', 'Cash ISA', 'Savings'];
 const OWNERS = ['Daniel', 'Camilla'] as const;
 type Owner = typeof OWNERS[number];
 
@@ -744,8 +752,9 @@ function ProviderModal({ existing, usedColors, onSave, onClose }: {
   );
 }
 
-function HoldingModal({ existing, onSave, onClose, livePrices = {} }: {
+function HoldingModal({ existing, cashAccount = false, onSave, onClose, livePrices = {} }: {
   existing?: Holding;
+  cashAccount?: boolean;
   onSave: (form: Omit<Holding, 'id'>) => void;
   onClose: () => void;
   livePrices?: Record<string, number>;
@@ -775,7 +784,7 @@ function HoldingModal({ existing, onSave, onClose, livePrices = {} }: {
   const [fetchingPrice, setFetchingPrice] = useState(false);
 
   useEffect(() => {
-    if (stockSelected) return;
+    if (stockSelected || cashAccount) return;
     const q = searchQuery.trim();
     if (!q) { setSearchResults([]); setShowDropdown(false); return; }
     const timer = setTimeout(async () => {
@@ -784,11 +793,11 @@ function HoldingModal({ existing, onSave, onClose, livePrices = {} }: {
       setShowDropdown(results.length > 0);
     }, 250);
     return () => clearTimeout(timer);
-  }, [searchQuery, stockSelected]);
+  }, [searchQuery, stockSelected, cashAccount]);
 
   useEffect(() => {
     const t = ticker.trim().toUpperCase();
-    if (!t) { setFetchedPrice(undefined); return; }
+    if (!t || cashAccount) { setFetchedPrice(undefined); return; }
     if (livePrices[t] !== undefined) { setFetchedPrice(livePrices[t]); return; }
     const timer = setTimeout(async () => {
       setFetchingPrice(true);
@@ -803,7 +812,7 @@ function HoldingModal({ existing, onSave, onClose, livePrices = {} }: {
       }
     }, 500);
     return () => clearTimeout(timer);
-  }, [ticker, livePrices]);
+  }, [ticker, livePrices, cashAccount]);
 
   function selectStock(stock: import('../lib/firebasePrices').StockResult) {
     setName(stock.name);
@@ -819,6 +828,12 @@ function HoldingModal({ existing, onSave, onClose, livePrices = {} }: {
   const calcValue = units && effectivePrice != null ? Number(units) * effectivePrice : null;
 
   function handleSubmit() {
+    if (cashAccount) {
+      const balance = manualValue ? Number(manualValue) : 0;
+      if (!name.trim() || isNaN(balance) || balance < 0) return;
+      onSave({ name: name.trim(), manualValue: balance, currency: nativeCurrency });
+      return;
+    }
     const mv = calcValue ?? (manualValue ? Number(manualValue) : 0);
     if (!name.trim() || isNaN(mv) || mv < 0) return;
     onSave({
@@ -834,9 +849,36 @@ function HoldingModal({ existing, onSave, onClose, livePrices = {} }: {
   const inputCls = "w-full border border-slate-600 bg-slate-900 text-slate-100 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder:text-slate-600 text-sm transition-colors";
 
   return (
-    <Modal title={existing ? 'Edit Holding' : 'Add Holding'} onClose={onClose}>
+    <Modal title={existing ? (cashAccount ? 'Edit Cash Account' : 'Edit Holding') : (cashAccount ? 'Add Cash Account' : 'Add Holding')} onClose={onClose}>
       <div className="space-y-4">
         <div className="grid grid-cols-2 gap-4">
+          {cashAccount ? (
+          <>
+          <div className="col-span-2">
+            <label className="block text-sm font-medium text-slate-400 mb-1.5">Account name *</label>
+            <input
+              autoFocus
+              className={inputCls}
+              placeholder="e.g. Emergency fund, Marcus easy access…"
+              value={name}
+              onChange={e => setName(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-400 mb-1.5">Balance ({sym}) *</label>
+            <input type="number" min="0" className={inputCls} placeholder="0.00" value={manualValue} onChange={e => setManualValue(e.target.value)} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-400 mb-1.5">Currency</label>
+            <select className={`${inputCls} cursor-pointer`} value={nativeCurrency} onChange={e => setNativeCurrency(e.target.value)}>
+              {SUPPORTED_CURRENCIES.map(c => (
+                <option key={c.code} value={c.code}>{c.label}</option>
+              ))}
+            </select>
+          </div>
+          </>
+          ) : (
+          <>
           <div className="col-span-2 relative">
             <label className="block text-sm font-medium text-slate-400 mb-1.5">Stock / Fund *</label>
             <input
@@ -907,6 +949,8 @@ function HoldingModal({ existing, onSave, onClose, livePrices = {} }: {
             <label className="block text-sm font-medium text-slate-400 mb-1.5">Avg cost per share ({sym})</label>
             <input type="number" min="0" className={inputCls} placeholder="0.00" value={avgCostPerShare} onChange={e => setAvgCostPerShare(e.target.value)} />
           </div>
+          </>
+          )}
         </div>
         <div className="flex gap-3 pt-2">
           <button onClick={onClose} className="flex-1 border border-slate-700 rounded-xl py-2.5 text-slate-400 hover:bg-slate-700 hover:text-slate-200 transition-colors text-sm">Cancel</button>

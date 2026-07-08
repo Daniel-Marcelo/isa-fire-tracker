@@ -2,13 +2,13 @@ import { useState, useRef } from 'react';
 import { Upload, AlertCircle, CheckCircle2 } from 'lucide-react';
 import Modal from './Modal';
 import type { Provider } from '../types';
-import { BROKER_PARSERS, type ParsedHolding } from '../lib/csvParsers';
+import { BROKER_PARSERS, type ParsedImport } from '../lib/csvParsers';
 import { useCurrency } from '../contexts/CurrencyContext';
 
 interface Props {
   providers: Provider[];
   onClose: () => void;
-  onImport: (providerId: string, holdings: ParsedHolding[], mergeMode: 'replace' | 'merge') => void;
+  onImport: (providerId: string, parsed: ParsedImport, mergeMode: 'replace' | 'merge') => void;
 }
 
 type Step = 'upload' | 'preview';
@@ -18,7 +18,7 @@ export default function CSVImportModal({ providers, onClose, onImport }: Props) 
   const [brokerId, setBrokerId] = useState(BROKER_PARSERS[0].id);
   const [targetProviderId, setTargetProviderId] = useState(providers[0]?.id ?? '');
   const [step, setStep] = useState<Step>('upload');
-  const [parsed, setParsed] = useState<ParsedHolding[]>([]);
+  const [parsed, setParsed] = useState<ParsedImport>({ holdings: [], dividends: [] });
   const [error, setError] = useState<string | null>(null);
   const [mergeMode, setMergeMode] = useState<'replace' | 'merge'>('replace');
   const fileRef = useRef<HTMLInputElement>(null);
@@ -32,7 +32,7 @@ export default function CSVImportModal({ providers, onClose, onImport }: Props) 
         const parser = BROKER_PARSERS.find(b => b.id === brokerId);
         if (!parser) throw new Error('Unknown broker');
         const result = parser.parse(text, currency);
-        if (result.length === 0) throw new Error('No holdings found — check you selected the right broker format.');
+        if (result.holdings.length === 0 && result.dividends.length === 0) throw new Error('No holdings found — check you selected the right broker format.');
         setParsed(result);
         setStep('preview');
       } catch (err) {
@@ -65,31 +65,31 @@ export default function CSVImportModal({ providers, onClose, onImport }: Props) 
         <div className="space-y-5">
           {/* Broker selector */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">Broker / Platform</label>
+            <label className="block text-sm font-medium text-slate-400 mb-1.5">Broker / Platform</label>
             <select
               value={brokerId}
               onChange={e => setBrokerId(e.target.value)}
-              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="w-full border border-slate-600 bg-slate-900 text-slate-100 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
             >
               {BROKER_PARSERS.map(b => (
                 <option key={b.id} value={b.id}>{b.label}</option>
               ))}
             </select>
-            <p className="text-xs text-gray-400 mt-1">
+            <p className="text-xs text-slate-600 mt-1">
               Choose the platform this transaction history was exported from.
             </p>
           </div>
 
           {/* Target provider */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">Add to Provider</label>
+            <label className="block text-sm font-medium text-slate-400 mb-1.5">Add to Provider</label>
             {providers.length === 0 ? (
-              <p className="text-sm text-amber-600">Create a provider first before importing.</p>
+              <p className="text-sm text-amber-400">Create a provider first before importing.</p>
             ) : (
               <select
                 value={targetProviderId}
                 onChange={e => setTargetProviderId(e.target.value)}
-                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full border border-slate-600 bg-slate-900 text-slate-100 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
               >
                 {providers.map(p => (
                   <option key={p.id} value={p.id}>{p.name}</option>
@@ -102,12 +102,12 @@ export default function CSVImportModal({ providers, onClose, onImport }: Props) 
           <div
             onDrop={handleDrop}
             onDragOver={e => e.preventDefault()}
-            className="border-2 border-dashed border-gray-200 rounded-2xl p-10 text-center cursor-pointer hover:border-indigo-400 hover:bg-indigo-50/30 transition-colors"
+            className="border-2 border-dashed border-slate-700 rounded-2xl p-10 text-center cursor-pointer hover:border-indigo-500 hover:bg-indigo-950/40 transition-colors"
             onClick={() => fileRef.current?.click()}
           >
-            <Upload size={32} className="mx-auto text-gray-300 mb-3" />
-            <p className="text-sm text-gray-600 font-medium">Drop CSV here or click to browse</p>
-            <p className="text-xs text-gray-400 mt-1">Transaction history export (.csv)</p>
+            <Upload size={32} className="mx-auto text-slate-600 mb-3" />
+            <p className="text-sm text-slate-400 font-medium">Drop CSV here or click to browse</p>
+            <p className="text-xs text-slate-600 mt-1">Transaction history export (.csv)</p>
             <input
               ref={fileRef}
               type="file"
@@ -118,7 +118,7 @@ export default function CSVImportModal({ providers, onClose, onImport }: Props) 
           </div>
 
           {error && (
-            <div className="flex items-start gap-2 bg-red-50 text-red-700 rounded-xl p-3 text-sm">
+            <div className="flex items-start gap-2 bg-red-900/20 border border-red-800/40 text-red-400 rounded-xl p-3 text-sm">
               <AlertCircle size={16} className="flex-shrink-0 mt-0.5" />
               <span>{error}</span>
             </div>
@@ -128,14 +128,14 @@ export default function CSVImportModal({ providers, onClose, onImport }: Props) 
 
       {step === 'preview' && (
         <div className="space-y-5">
-          <div className="flex items-center gap-2 text-emerald-700 bg-emerald-50 rounded-xl px-4 py-2.5 text-sm font-medium">
+          <div className="flex items-center gap-2 text-green-400 bg-green-900/20 border border-green-800/40 rounded-xl px-4 py-2.5 text-sm font-medium">
             <CheckCircle2 size={16} />
-            {parsed.length} holdings parsed
+            {parsed.holdings.length} holdings{parsed.dividends.length > 0 ? ` · ${parsed.dividends.length} dividend payments` : ''} parsed
           </div>
 
           {/* Merge mode */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">Import mode</label>
+            <label className="block text-sm font-medium text-slate-400 mb-1.5">Import mode</label>
             <div className="flex gap-2">
               {(['replace', 'merge'] as const).map(m => (
                 <button
@@ -144,25 +144,25 @@ export default function CSVImportModal({ providers, onClose, onImport }: Props) 
                   className={`flex-1 py-2 rounded-xl text-sm font-medium border transition-colors ${
                     mergeMode === m
                       ? 'bg-indigo-600 text-white border-indigo-600'
-                      : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+                      : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700 hover:text-slate-200'
                   }`}
                 >
                   {m === 'replace' ? 'Replace all holdings' : 'Merge with existing'}
                 </button>
               ))}
             </div>
-            <p className="text-xs text-gray-400 mt-1">
+            <p className="text-xs text-slate-600 mt-1">
               {mergeMode === 'replace'
-                ? 'All current holdings in this provider will be removed and replaced with the imported ones.'
-                : 'Imported holdings will be added to existing ones. Matching tickers will have their units and cost basis summed.'}
+                ? 'All current holdings in this provider will be removed and replaced with the imported ones. Dividend history is also replaced with what\'s in this file.'
+                : 'Imported holdings will be added to existing ones. Matching tickers will have their units and cost basis summed. New dividend payments are added; ones already recorded are skipped.'}
             </p>
           </div>
 
           {/* Preview table */}
-          <div className="max-h-64 overflow-y-auto rounded-xl border border-gray-100">
+          <div className="max-h-64 overflow-y-auto rounded-xl border border-slate-700/30">
             <table className="w-full text-sm">
               <thead>
-                <tr className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wide">
+                <tr className="bg-slate-900/60 text-slate-600 text-xs uppercase tracking-wide">
                   <th className="text-left px-4 py-2.5">Ticker</th>
                   <th className="text-left px-4 py-2.5">Name</th>
                   <th className="text-right px-4 py-2.5">Units</th>
@@ -170,12 +170,12 @@ export default function CSVImportModal({ providers, onClose, onImport }: Props) 
                 </tr>
               </thead>
               <tbody>
-                {parsed.map(h => (
-                  <tr key={h.ticker} className="border-t border-gray-50">
-                    <td className="px-4 py-2.5 font-mono font-medium text-gray-900">{h.ticker}</td>
-                    <td className="px-4 py-2.5 text-gray-500 truncate max-w-[140px]">{h.name}</td>
-                    <td className="px-4 py-2.5 text-right text-gray-800">{h.units.toFixed(6)}</td>
-                    <td className="px-4 py-2.5 text-right text-gray-800">{fmt(h.costBasis)}</td>
+                {parsed.holdings.map(h => (
+                  <tr key={h.ticker} className="border-t border-slate-700/30">
+                    <td className="px-4 py-2.5 font-mono font-medium text-slate-100">{h.ticker}</td>
+                    <td className="px-4 py-2.5 text-slate-500 truncate max-w-[140px]">{h.name}</td>
+                    <td className="px-4 py-2.5 text-right text-slate-300">{h.units.toFixed(6)}</td>
+                    <td className="px-4 py-2.5 text-right text-slate-300">{fmt(h.costBasis)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -184,15 +184,15 @@ export default function CSVImportModal({ providers, onClose, onImport }: Props) 
 
           <div className="flex gap-3">
             <button
-              onClick={() => { setStep('upload'); setParsed([]); }}
-              className="flex-1 border border-gray-200 rounded-xl py-2.5 text-sm text-gray-600 hover:bg-gray-50 transition-colors"
+              onClick={() => { setStep('upload'); setParsed({ holdings: [], dividends: [] }); }}
+              className="flex-1 border border-slate-700 rounded-xl py-2.5 text-sm text-slate-400 hover:bg-slate-700 hover:text-slate-200 transition-colors"
             >
               Back
             </button>
             <button
               onClick={handleConfirm}
               disabled={!targetProviderId}
-              className="flex-1 bg-indigo-600 text-white rounded-xl py-2.5 text-sm font-medium hover:bg-indigo-700 transition-colors disabled:opacity-50"
+              className="flex-1 bg-indigo-600 text-white rounded-xl py-2.5 text-sm font-medium hover:bg-indigo-500 transition-colors disabled:opacity-50"
             >
               Import to {providers.find(p => p.id === targetProviderId)?.name ?? '…'}
             </button>

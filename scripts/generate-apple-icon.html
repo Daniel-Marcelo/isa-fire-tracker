@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<body>
+<canvas id="c" width="180" height="180"></canvas>
+<br><button onclick="dl()">Download apple-touch-icon.png</button>
+<script>
+const svg = `<svg width="180" height="180" viewBox="0 0 500 500" xmlns="http://www.w3.org/2000/svg">
+  <rect width="500" height="500" rx="100" fill="#0f1a2e"/>
+  <polyline points="70,370 180,280 290,310 400,140" fill="none" stroke="#3b82f6" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M383,132 C383,100 412,82 412,58 C412,82 436,93 436,118 C436,140 420,153 412,158 C405,153 383,145 383,132 Z" fill="#f97316"/>
+  <path d="M392,136 C392,116 408,103 408,88 C408,103 421,110 421,126 C421,141 412,150 412,153 C409,150 392,146 392,136 Z" fill="#fbbf24"/>
+  <circle cx="400" cy="140" r="12" fill="#f59e0b"/>
+</svg>`;
+
+const blob = new Blob([svg], {type: 'image/svg+xml'});
+const url = URL.createObjectURL(blob);
+const img = new Image();
+img.onload = () => {
+  const ctx = document.getElementById('c').getContext('2d');
+  ctx.drawImage(img, 0, 0, 180, 180);
+  URL.revokeObjectURL(url);
+};
+img.src = url;
+
+function dl() {
+  const a = document.createElement('a');
+  a.download = 'apple-touch-icon.png';
+  a.href = document.getElementById('c').toDataURL('image/png');
+  a.click();
+}
+</script>
+</body>
+</html>

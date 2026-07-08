@@ -55,16 +55,16 @@ export default function FundUploadModal({ onClose, onSave, existingTickers }: Pr
   const isUpdate = ticker && existingTickers.includes(ticker.toUpperCase());
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg">
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+      <div className="bg-slate-800 border border-slate-700/60 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700/60">
           <div>
-            <h2 className="text-lg font-semibold text-gray-900">Upload Fund Holdings</h2>
-            <p className="text-xs text-gray-400 mt-0.5">Vanguard UCITS ETF holdings file (.xlsx)</p>
+            <h2 className="text-base font-semibold text-slate-50">Upload Fund Holdings</h2>
+            <p className="text-xs text-slate-400 mt-0.5">Vanguard UCITS ETF holdings file (.xlsx)</p>
           </div>
-          <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100 transition-colors">
-            <X className="w-4 h-4 text-gray-500" />
+          <button onClick={onClose} className="text-slate-500 hover:text-slate-300 transition-colors p-1 rounded-lg hover:bg-slate-700">
+            <X className="w-4 h-4" />
           </button>
         </div>
 
@@ -77,7 +77,7 @@ export default function FundUploadModal({ onClose, onSave, existingTickers }: Pr
               onDrop={handleDrop}
               onClick={() => inputRef.current?.click()}
               className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors ${
-                dragging ? 'border-indigo-400 bg-indigo-50' : 'border-gray-200 hover:border-indigo-300 hover:bg-gray-50'
+                dragging ? 'border-indigo-500 bg-indigo-950/40' : 'border-slate-700 hover:border-indigo-500 hover:bg-indigo-950/40'
               }`}
             >
               <input
@@ -88,15 +88,15 @@ export default function FundUploadModal({ onClose, onSave, existingTickers }: Pr
                 onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
               />
               {status === 'parsing' ? (
-                <div className="flex flex-col items-center gap-2 text-gray-500">
+                <div className="flex flex-col items-center gap-2 text-slate-400">
                   <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
                   <span className="text-sm">Parsing file…</span>
                 </div>
               ) : (
                 <div className="flex flex-col items-center gap-2">
-                  <Upload className="w-8 h-8 text-gray-300" />
-                  <p className="text-sm font-medium text-gray-600">Drop file here or click to browse</p>
-                  <p className="text-xs text-gray-400">
+                  <Upload className="w-8 h-8 text-slate-600" />
+                  <p className="text-sm font-medium text-slate-400">Drop file here or click to browse</p>
+                  <p className="text-xs text-slate-600">
                     Download from Vanguard → ETF page → Holdings → Export to Excel
                   </p>
                 </div>
@@ -106,14 +106,14 @@ export default function FundUploadModal({ onClose, onSave, existingTickers }: Pr
 
           {/* Error state */}
           {status === 'error' && (
-            <div className="flex items-start gap-3 bg-red-50 rounded-xl p-4">
-              <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+            <div className="flex items-start gap-3 bg-red-900/20 border border-red-800/40 rounded-xl p-4">
+              <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
               <div>
-                <p className="text-sm font-medium text-red-700">Parse error</p>
-                <p className="text-xs text-red-600 mt-0.5">{error}</p>
+                <p className="text-sm font-medium text-red-400">Parse error</p>
+                <p className="text-xs text-red-400 mt-0.5">{error}</p>
                 <button
                   onClick={() => { setStatus('idle'); setError(''); }}
-                  className="mt-2 text-xs text-red-600 underline"
+                  className="mt-2 text-xs text-red-400 underline"
                 >
                   Try again
                 </button>
@@ -124,12 +124,12 @@ export default function FundUploadModal({ onClose, onSave, existingTickers }: Pr
           {/* Preview */}
           {status === 'preview' && preview && (
             <div className="space-y-4">
-              <div className="flex items-start gap-3 bg-green-50 rounded-xl p-4">
-                <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" />
+              <div className="flex items-start gap-3 bg-green-900/20 border border-green-800/40 rounded-xl p-4">
+                <CheckCircle className="w-5 h-5 text-green-400 flex-shrink-0 mt-0.5" />
                 <div className="text-sm">
-                  <p className="font-medium text-green-800">{preview.fundName || 'Fund detected'}</p>
-                  {preview.asAt && <p className="text-green-700 text-xs mt-0.5">As at {preview.asAt}</p>}
-                  <p className="text-green-700 text-xs mt-0.5">
+                  <p className="font-medium text-green-400">{preview.fundName || 'Fund detected'}</p>
+                  {preview.asAt && <p className="text-green-400 text-xs mt-0.5">As at {preview.asAt}</p>}
+                  <p className="text-green-400 text-xs mt-0.5">
                     {preview.totalHoldings} holdings parsed
                   </p>
                 </div>
@@ -137,46 +137,46 @@ export default function FundUploadModal({ onClose, onSave, existingTickers }: Pr
 
               {/* Ticker assignment */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                  Fund ticker <span className="text-red-500">*</span>
+                <label className="block text-sm font-medium text-slate-400 mb-1.5">
+                  Fund ticker <span className="text-red-400">*</span>
                 </label>
                 <input
                   type="text"
                   value={ticker}
                   onChange={(e) => setTicker(e.target.value.toUpperCase())}
                   placeholder="e.g. VFEG"
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full border border-slate-600 bg-slate-900 text-slate-100 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
                 {isUpdate && (
-                  <p className="text-xs text-amber-600 mt-1">
+                  <p className="text-xs text-amber-400 mt-1">
                     This will replace existing data for {ticker}.
                   </p>
                 )}
-                <p className="text-xs text-gray-400 mt-1">
+                <p className="text-xs text-slate-600 mt-1">
                   Must match the ticker used on your holdings (e.g. VFEG, VWRL, VHVG).
                 </p>
               </div>
 
               {/* Top 5 preview */}
               <div>
-                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Top holdings preview</p>
-                <div className="rounded-lg border border-gray-100 overflow-hidden">
+                <p className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-2">Top holdings preview</p>
+                <div className="rounded-lg border border-slate-700/30 overflow-hidden">
                   <table className="w-full text-xs">
-                    <thead className="bg-gray-50">
-                      <tr className="text-gray-500">
+                    <thead className="bg-slate-900/60">
+                      <tr className="text-slate-600">
                         <th className="text-left px-3 py-2">Ticker</th>
                         <th className="text-left px-3 py-2">Name</th>
                         <th className="text-right px-3 py-2">Weight</th>
                         <th className="text-left px-3 py-2">Sector</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-50">
+                    <tbody className="divide-y divide-slate-700/30">
                       {preview.holdings.slice(0, 5).map((h) => (
                         <tr key={h.ticker}>
-                          <td className="px-3 py-2 font-mono font-medium text-gray-700">{h.ticker}</td>
-                          <td className="px-3 py-2 text-gray-600 truncate max-w-36">{h.name}</td>
-                          <td className="px-3 py-2 text-right text-gray-600">{h.weight.toFixed(2)}%</td>
-                          <td className="px-3 py-2 text-gray-500">{h.sector}</td>
+                          <td className="px-3 py-2 font-mono font-medium text-slate-400">{h.ticker}</td>
+                          <td className="px-3 py-2 text-slate-400 truncate max-w-36">{h.name}</td>
+                          <td className="px-3 py-2 text-right text-slate-400">{h.weight.toFixed(2)}%</td>
+                          <td className="px-3 py-2 text-slate-500">{h.sector}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -186,7 +186,7 @@ export default function FundUploadModal({ onClose, onSave, existingTickers }: Pr
 
               <button
                 onClick={() => { setStatus('idle'); setPreview(null); setTicker(''); }}
-                className="text-xs text-gray-400 hover:text-gray-600 underline"
+                className="text-xs text-slate-600 hover:text-slate-400 underline"
               >
                 Upload a different file
               </button>
@@ -195,10 +195,10 @@ export default function FundUploadModal({ onClose, onSave, existingTickers }: Pr
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-3">
+        <div className="px-6 py-4 border-t border-slate-700/60 flex justify-end gap-3">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 transition-colors"
+            className="px-4 py-2 text-sm border border-slate-700 text-slate-400 rounded-xl hover:bg-slate-700 hover:text-slate-200 transition-colors"
           >
             Cancel
           </button>
@@ -206,7 +206,7 @@ export default function FundUploadModal({ onClose, onSave, existingTickers }: Pr
             <button
               onClick={handleSave}
               disabled={!ticker.trim()}
-              className="px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              className="px-4 py-2 text-sm bg-indigo-600 text-white rounded-xl hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               {isUpdate ? 'Update holdings' : 'Save holdings'}
             </button>

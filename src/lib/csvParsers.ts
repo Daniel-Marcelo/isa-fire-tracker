@@ -1,3 +1,5 @@
+import type { DividendRecord } from '../types';
+
 export interface ParsedHolding {
   ticker: string;
   name: string;
@@ -5,22 +7,28 @@ export interface ParsedHolding {
   costBasis: number; // total invested in user's preferred currency (net of sells)
 }
 
+export interface ParsedImport {
+  holdings: ParsedHolding[];
+  dividends: DividendRecord[];
+}
+
 export interface BrokerParser {
   id: string;
   label: string;
-  parse: (csv: string, currency: string) => ParsedHolding[];
+  parse: (csv: string, currency: string) => ParsedImport;
 }
 
 // ---------------------------------------------------------------------------
 // Trading 212
 // ---------------------------------------------------------------------------
 
-function parseTrading212(csv: string, currency: string): ParsedHolding[] {
+function parseTrading212(csv: string, currency: string): ParsedImport {
   const lines = csv.trim().split('\n');
   const header = lines[0].split(',').map(h => h.replace(/"/g, '').trim());
 
   const col = (name: string) => header.indexOf(name);
   const iAction = col('Action');
+  const iTime = col('Time');
   const iTicker = col('Ticker');
   const iName = col('Name');
   const iShares = col('No. of shares');
@@ -29,9 +37,11 @@ function parseTrading212(csv: string, currency: string): ParsedHolding[] {
   const iExchangeRate = col('Exchange rate');
   const iTotal = col('Total');
   const iTotalCurrency = col('Currency (Total)');
+  const iId = col('ID');
 
   type Entry = { units: number; costBasis: number };
   const map = new Map<string, Entry & { name: string }>();
+  const dividends: DividendRecord[] = [];
 
   for (let i = 1; i < lines.length; i++) {
     const row = parseCSVRow(lines[i]);
@@ -65,6 +75,27 @@ function parseTrading212(csv: string, currency: string): ParsedHolding[] {
 
     if (!ticker || !action) continue;
 
+    // Dividend rows: Action starts with "Dividend" — e.g. "Dividend (Ordinary)",
+    // "Dividend (Dividends paid by us corporations)". Total is the net cash
+    // credited (after withholding) in Currency (Total).
+    if (/^dividend/i.test(action)) {
+      // Slice the date out of "YYYY-MM-DD HH:MM:SS" rather than Date-parsing it —
+      // timezone shifts could move a payment across a year boundary.
+      const date = (iTime !== -1 ? row[iTime]?.trim().slice(0, 10) : '') ?? '';
+      if (/^\d{4}-\d{2}-\d{2}$/.test(date) && rawTotal > 0) {
+        const brokerId = iId !== -1 ? row[iId]?.trim() : '';
+        dividends.push({
+          id: brokerId || `${date}|${ticker}|${rawTotal.toFixed(2)}`,
+          date,
+          ticker,
+          name,
+          amount: rawTotal,
+          currency: totalCurrency || 'GBP',
+        });
+      }
+      continue;
+    }
+
     if (!map.has(ticker)) map.set(ticker, { units: 0, costBasis: 0, name });
 
     const entry = map.get(ticker)!;
@@ -85,21 +116,24 @@ function parseTrading212(csv: string, currency: string): ParsedHolding[] {
     }
   }
 
-  return Array.from(map.entries())
-    .filter(([, e]) => e.units > 0.000001)
-    .map(([ticker, e]) => ({
-      ticker,
-      name: e.name,
-      units: parseFloat(e.units.toFixed(8)),
-      costBasis: parseFloat(e.costBasis.toFixed(2)),
-    }));
+  return {
+    holdings: Array.from(map.entries())
+      .filter(([, e]) => e.units > 0.000001)
+      .map(([ticker, e]) => ({
+        ticker,
+        name: e.name,
+        units: parseFloat(e.units.toFixed(8)),
+        costBasis: parseFloat(e.costBasis.toFixed(2)),
+      })),
+    dividends,
+  };
 }
 
 // ---------------------------------------------------------------------------
 // Freetrade (basic export format)
 // ---------------------------------------------------------------------------
 
-function parseFreetrade(csv: string, _currency: string): ParsedHolding[] {
+function parseFreetrade(csv: string, _currency: string): ParsedImport {
   const lines = csv.trim().split('\n');
   const header = lines[0].split(',').map(h => h.replace(/"/g, '').trim());
 
@@ -109,9 +143,12 @@ function parseFreetrade(csv: string, _currency: string): ParsedHolding[] {
   const iName = col('Title');
   const iShares = col('Quantity');
   const iTotal = col('Total Amount');
+  const iTimestamp = col('Timestamp');
+  const iAccountCurrency = col('Account Currency');
 
   type Entry = { units: number; costBasis: number; name: string };
   const map = new Map<string, Entry>();
+  const dividends: DividendRecord[] = [];
 
   for (let i = 1; i < lines.length; i++) {
     const row = parseCSVRow(lines[i]);
@@ -124,6 +161,23 @@ function parseFreetrade(csv: string, _currency: string): ParsedHolding[] {
     const total = Math.abs(parseFloat(row[iTotal]) || 0);
 
     if (!ticker || !type) continue;
+
+    if (type === 'dividend') {
+      const ts = (iTimestamp !== -1 ? row[iTimestamp]?.trim() : '') ?? '';
+      const date = ts.slice(0, 10);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(date) && total > 0) {
+        dividends.push({
+          id: `${date}|${ticker}|${total.toFixed(2)}`,
+          date,
+          ticker,
+          name,
+          amount: total,
+          currency: ((iAccountCurrency !== -1 ? row[iAccountCurrency]?.trim() : '') || 'GBP'),
+        });
+      }
+      continue;
+    }
+
     if (!map.has(ticker)) map.set(ticker, { units: 0, costBasis: 0, name });
     const entry = map.get(ticker)!;
 
@@ -137,21 +191,24 @@ function parseFreetrade(csv: string, _currency: string): ParsedHolding[] {
     }
   }
 
-  return Array.from(map.entries())
-    .filter(([, e]) => e.units > 0.000001)
-    .map(([ticker, e]) => ({
-      ticker,
-      name: e.name,
-      units: parseFloat(e.units.toFixed(8)),
-      costBasis: parseFloat(e.costBasis.toFixed(2)),
-    }));
+  return {
+    holdings: Array.from(map.entries())
+      .filter(([, e]) => e.units > 0.000001)
+      .map(([ticker, e]) => ({
+        ticker,
+        name: e.name,
+        units: parseFloat(e.units.toFixed(8)),
+        costBasis: parseFloat(e.costBasis.toFixed(2)),
+      })),
+    dividends,
+  };
 }
 
 // ---------------------------------------------------------------------------
 // Hargreaves Lansdown (transaction history export)
 // ---------------------------------------------------------------------------
 
-function parseHL(csv: string, _currency: string): ParsedHolding[] {
+function parseHL(csv: string, _currency: string): ParsedImport {
   const lines = csv.trim().split('\n');
   // HL includes some header rows before the actual CSV header; find it
   let headerIdx = lines.findIndex(l => l.toLowerCase().includes('stock description') || l.toLowerCase().includes('sedol'));
@@ -164,9 +221,11 @@ function parseHL(csv: string, _currency: string): ParsedHolding[] {
   const iType = col('type') !== -1 ? col('type') : col('trade type');
   const iQty = col('quantity') !== -1 ? col('quantity') : col('units');
   const iValue = col('net amount') !== -1 ? col('net amount') : col('value');
+  const iDate = col('date');
 
   type Entry = { units: number; costBasis: number; name: string };
   const map = new Map<string, Entry>();
+  const dividends: DividendRecord[] = [];
 
   for (let i = headerIdx + 1; i < lines.length; i++) {
     const row = parseCSVRow(lines[i]);
@@ -176,6 +235,25 @@ function parseHL(csv: string, _currency: string): ParsedHolding[] {
     const type = row[iType]?.trim().toLowerCase() ?? '';
     const qty = Math.abs(parseFloat(row[iQty]?.replace(/,/g, '')) || 0);
     const value = Math.abs(parseFloat(row[iValue]?.replace(/[£,]/g, '')) || 0);
+
+    // Dividend/income rows come before the qty guard: HL leaves quantity blank
+    // for income lines. HL has no reliable type flag across account types, so
+    // match defensively; worst case a file yields no dividends.
+    if (desc && value > 0 && (type.includes('div') || /dividend/i.test(desc))) {
+      const m = (iDate !== -1 ? row[iDate]?.trim() ?? '' : '').match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+      if (m) {
+        const date = `${m[3]}-${m[2]}-${m[1]}`; // DD/MM/YYYY → ISO
+        dividends.push({
+          id: `${date}|${desc}|${value.toFixed(2)}`,
+          date,
+          ticker: desc, // HL transaction exports key by description, not ticker
+          name: desc,
+          amount: value,
+          currency: 'GBP',
+        });
+      }
+      continue;
+    }
 
     if (!desc || qty === 0) continue;
     // Use description as key (HL doesn't always include ticker in transaction export)
@@ -193,14 +271,17 @@ function parseHL(csv: string, _currency: string): ParsedHolding[] {
     }
   }
 
-  return Array.from(map.entries())
-    .filter(([, e]) => e.units > 0.000001)
-    .map(([ticker, e]) => ({
-      ticker,
-      name: e.name,
-      units: parseFloat(e.units.toFixed(8)),
-      costBasis: parseFloat(e.costBasis.toFixed(2)),
-    }));
+  return {
+    holdings: Array.from(map.entries())
+      .filter(([, e]) => e.units > 0.000001)
+      .map(([ticker, e]) => ({
+        ticker,
+        name: e.name,
+        units: parseFloat(e.units.toFixed(8)),
+        costBasis: parseFloat(e.costBasis.toFixed(2)),
+      })),
+    dividends,
+  };
 }
 
 // ---------------------------------------------------------------------------

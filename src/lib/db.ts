@@ -1,5 +1,6 @@
-import type { AppData, Holding, UploadedFundHoldings } from '../types';
+import type { AppData, UploadedFundHoldings } from '../types';
 import { supabase } from './supabase';
+import { migrateAppData, stripDerived } from '../store';
 
 const FUND_TABLE = 'fund_holdings';
 
@@ -56,28 +57,7 @@ export async function loadFromSupabase(): Promise<AppData | null> {
     throw error;
   }
 
-  const appData = data.data as AppData;
-
-  // Migrate old data: if a holding has no manualValue but has a stored currentValue,
-  // treat it as the native-currency manual value.
-  return {
-    ...appData,
-    providers: appData.providers.map(p => ({
-      ...p,
-      holdings: p.holdings.map(h => {
-        if (h.manualValue == null && (h as any).currentValue != null) {
-          return { ...h, manualValue: (h as any).currentValue, currentValue: undefined };
-        }
-        return h;
-      }),
-    })),
-  };
-}
-
-function stripDerived(holding: Holding): Omit<Holding, 'currentPrice' | 'currentValue'> {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { currentPrice, currentValue, ...stored } = holding;
-  return stored;
+  return migrateAppData(data.data as AppData);
 }
 
 /** Upsert AppData to Supabase for the signed-in user. */
@@ -89,7 +69,7 @@ export async function saveToSupabase(appData: AppData): Promise<void> {
     ...appData,
     providers: appData.providers.map(p => ({
       ...p,
-      holdings: p.holdings.map(stripDerived) as Holding[],
+      holdings: p.holdings.map(stripDerived),
     })),
   };
 
