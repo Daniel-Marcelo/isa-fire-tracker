@@ -10,7 +10,6 @@ const currentTaxYear = (): number => {
 const defaultFireSettings: FireSettings = {
   currentAge: 30,
   targetRetirementAge: 55,
-  currentSavings: 0,
   monthlyContribution: 1000,
   monthlyPensionContribution: 0,
   pensionAccessAge: 57,
@@ -19,6 +18,13 @@ const defaultFireSettings: FireSettings = {
   annualExpensesInRetirement: 25000,
   withdrawalRate: 3.5,
   returnVolatility: 15,
+  fireMode: 'earliest',
+  targetConfidence: 90,
+  planToAge: 95,
+  statePensionEnabled: true,
+  statePensionAnnual: 12000,
+  statePensionAge: 67,
+  pensionTaxRate: 15,
 };
 
 const defaultUserSettings: UserSettings = {

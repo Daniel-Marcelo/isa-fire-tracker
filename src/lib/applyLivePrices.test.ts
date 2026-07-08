@@ -14,7 +14,6 @@ function makeData(providers: Provider[], currency = 'GBP'): AppData {
     fireSettings: {
       currentAge: 30,
       targetRetirementAge: 55,
-      currentSavings: 0,
       monthlyContribution: 0,
       monthlyPensionContribution: 0,
       pensionAccessAge: 57,

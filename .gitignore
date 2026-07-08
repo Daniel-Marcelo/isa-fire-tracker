@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# Claude Code local agent worktrees (keep the shared launch.json)
+.claude/worktrees/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

@@ -41,16 +41,22 @@ export interface DividendRecord {
 
 export interface FireSettings {
   currentAge: number;
-  targetRetirementAge: number;
-  currentSavings: number;
+  targetRetirementAge: number;       // pinned retirement age for 'fixedAge' mode
   monthlyContribution: number;
   monthlyPensionContribution: number;
   pensionAccessAge: number;
   expectedAnnualReturn: number;
   inflationRate: number;
   annualExpensesInRetirement: number;
-  withdrawalRate: number;
-  returnVolatility?: number; // annual return std dev in %, for Monte Carlo (default 15)
+  withdrawalRate: number;            // still drives the Portfolio tab's SWR card
+  returnVolatility?: number;         // annual return std dev in %, for Monte Carlo (default 15)
+  fireMode?: 'earliest' | 'fixedAge'; // default 'earliest'
+  targetConfidence?: number;         // %, default 90, clamped 50–99 at use sites
+  planToAge?: number;                // default 95, clamped 80–105
+  statePensionEnabled?: boolean;     // default true
+  statePensionAnnual?: number;       // £/yr in today's money, default 12000
+  statePensionAge?: number;          // default 67
+  pensionTaxRate?: number;           // % on pension withdrawals, default 15, clamped 0–60
 }
 
 export interface UserSettings {

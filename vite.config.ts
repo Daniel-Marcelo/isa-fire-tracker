@@ -4,6 +4,11 @@ import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
 export default defineConfig({
+  server: {
+    // Honour the PORT env var (e.g. preview tooling assigning a free port);
+    // fall back to Vite's default otherwise.
+    port: process.env.PORT ? Number(process.env.PORT) : undefined,
+  },
   plugins: [
     react(),
     tailwindcss(),
