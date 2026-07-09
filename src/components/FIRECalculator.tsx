@@ -46,6 +46,25 @@ function Spinner({ label }: { label?: string }) {
   );
 }
 
+/**
+ * Compares the solved "required" total monthly saving against what the user
+ * contributes today (accessible + pension combined) and renders a small chip
+ * with the difference.
+ */
+function ContributionDeltaChip({ current, required, fmt }: { current: number; required: number; fmt: (v: number) => string }) {
+  const delta = required - current;
+  const chipClass = 'text-xs bg-slate-900/70 border border-slate-700 rounded-full px-3 py-1 text-slate-300 tabular-nums';
+  if (Math.abs(delta) < 5) {
+    return <span className={chipClass}>same as today</span>;
+  }
+  const positive = delta > 0;
+  return (
+    <span className={chipClass}>
+      {positive ? '+' : '−'}{fmt(Math.abs(delta))}/mo {positive ? 'more' : 'less'} than today
+    </span>
+  );
+}
+
 export default function FIRECalculator({ data, rawData, onChange }: Props) {
   const s = data.fireSettings;
   const { fmt, fmtShort } = useCurrency();
@@ -177,6 +196,8 @@ export default function FIRECalculator({ data, rawData, onChange }: Props) {
   const confidence = mc && mc.runs > 0 ? mc.successRate : null;
   const curve = calc?.curve ?? [];
   const sensitivity = calc?.sensitivity ?? null;
+  const requiredContribution = calc?.requiredContribution ?? null;
+  const currentTotalContribution = s.monthlyContribution + (s.monthlyPensionContribution ?? 0);
   // True only until the worker's very first result lands (thereafter the last
   // result is kept on screen, dimmed, while a new one computes).
   const awaitingFirst = calc == null;
@@ -460,6 +481,12 @@ export default function FIRECalculator({ data, rawData, onChange }: Props) {
                         ? 'Plan-to age must be beyond your current age'
                         : `Not reachable by ${planTo} at ${confTarget}% — lower the confidence target, spending, or check contributions.`}
               </p>
+              {solvedAge != null && requiredContribution != null && (
+                <p className="text-xs text-indigo-300/80 mt-1.5">
+                  Saving {fmt(requiredContribution)}/mo total would sustain retirement at {solvedAge.toFixed(1)}.{' '}
+                  <ContributionDeltaChip current={currentTotalContribution} required={requiredContribution} fmt={fmt} />
+                </p>
+              )}
             </div>
           ) : (
             <>
@@ -476,6 +503,28 @@ export default function FIRECalculator({ data, rawData, onChange }: Props) {
                     ? "Couldn't compute a projection — check your inputs."
                     : `chance your money lasts to ${planTo} retiring at ${chosenAge}`}
                 </p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-500 font-medium uppercase tracking-wide">Required saving</p>
+                <p className="text-3xl font-bold text-slate-50 tabular-nums">
+                  {awaitingFirst
+                    ? (calcError ? "Couldn't compute" : '…')
+                    : requiredContribution == null ? '—' : `${fmt(requiredContribution)}/mo`}
+                </p>
+                <p className="text-xs text-slate-600 mt-0.5">
+                  {awaitingFirst
+                    ? (calcError ? "Couldn't compute a projection — check your inputs." : 'Estimating your required saving…')
+                    : requiredContribution == null
+                      ? `Not reachable at ${chosenAge} by saving alone — push the age out or trim spending.`
+                      : requiredContribution === 0
+                        ? `Your current pots already clear ${confTarget}% — no further saving required.`
+                        : `total monthly saving to retire at ${chosenAge} with ≥${confTarget}% confidence`}
+                </p>
+                {!awaitingFirst && requiredContribution != null && (
+                  <div className="mt-1.5">
+                    <ContributionDeltaChip current={currentTotalContribution} required={requiredContribution} fmt={fmt} />
+                  </div>
+                )}
               </div>
             </>
           )}

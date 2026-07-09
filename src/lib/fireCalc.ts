@@ -2,7 +2,7 @@
 // main-thread fallback in FIRECalculator.tsx. Keeping this logic in one place
 // means the two execution paths can never drift from each other.
 import type { FireSettings } from '../types';
-import { runMonteCarlo, solveEarliestFireAge, successCurve, type MonteCarloResult } from './monteCarlo';
+import { runMonteCarlo, solveEarliestFireAge, solveRequiredContribution, successCurve, type MonteCarloResult } from './monteCarlo';
 import { planToAgeOf } from './fireEngine';
 
 export interface FireCalcRequest {
@@ -19,6 +19,7 @@ export interface FireCalcResult {
   mc: MonteCarloResult | null;
   curve: { age: number; pct: number }[];
   sensitivity: { later: number; lessSpend: number } | null;
+  requiredContribution: number | null;
 }
 
 // The solver runs ~10 sims and drives the headline age, so it and the headline/
@@ -55,5 +56,14 @@ export function runFireCalc(req: FireCalcRequest): FireCalcResult {
     sensitivity = { later: later.successRate, lessSpend: lessSpend.successRate };
   }
 
-  return { id, solvedAge, headlineAge, mc, curve, sensitivity };
+  // In earliest mode, solve for the age that's actually headlined (falling back to
+  // chosenAge if unreachable so the card still has something to show); in fixedAge
+  // mode it's always the chosen age. Use MC_RUNS (not the module's DEFAULT_RUNS) so
+  // this number is consistent with the confidence shown elsewhere.
+  const targetAge = mode === 'earliest' ? (solvedAge ?? chosenAge) : chosenAge;
+  const requiredContribution = degenerate
+    ? null
+    : solveRequiredContribution(settings, accessible, pension, targetAge, { runs: MC_RUNS });
+
+  return { id, solvedAge, headlineAge, mc, curve, sensitivity, requiredContribution };
 }

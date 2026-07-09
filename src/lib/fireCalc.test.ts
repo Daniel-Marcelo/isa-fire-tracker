@@ -33,6 +33,7 @@ describe('runFireCalc', () => {
     expect(result.mc).not.toBeNull();
     expect(result.mc!.runs).toBe(MC_RUNS);
     expect(result.curve.length).toBeGreaterThan(0);
+    expect(result.requiredContribution === null || typeof result.requiredContribution === 'number').toBe(true);
   });
 
   it('handles a degenerate horizon without throwing, returning nulls/empty', () => {
@@ -52,6 +53,7 @@ describe('runFireCalc', () => {
     expect(result.headlineAge).toBeNull();
     expect(result.mc).toBeNull();
     expect(result.sensitivity).toBeNull();
+    expect(result.requiredContribution).toBeNull();
   });
 
   it('is deterministic for identical inputs', () => {
