@@ -4,7 +4,8 @@ export interface ParsedHolding {
   ticker: string;
   name: string;
   units: number;
-  costBasis: number; // total invested in user's preferred currency (net of sells)
+  costBasis: number; // total invested, in `currency` below
+  currency: string;  // currency costBasis (and the instrument) is expressed in
 }
 
 export interface ParsedImport {
@@ -39,7 +40,7 @@ function parseTrading212(csv: string, currency: string): ParsedImport {
   const iTotalCurrency = col('Currency (Total)');
   const iId = col('ID');
 
-  type Entry = { units: number; costBasis: number };
+  type Entry = { units: number; costBasis: number; currency: string };
   const map = new Map<string, Entry & { name: string }>();
   const dividends: DividendRecord[] = [];
 
@@ -52,10 +53,9 @@ function parseTrading212(csv: string, currency: string): ParsedImport {
     const name = row[iName]?.replace(/^"|"$/g, '').trim() ?? ticker;
     const shares = parseFloat(row[iShares]) || 0;
 
-    // Resolve cost in the user's preferred currency.
-    // The CSV gives us two options: Total (account base currency) or Price/share (instrument currency).
-    // We pick whichever column already matches; if neither does, fall back to Total and convert
-    // using the exchange rate (Total = Price * shares / exchangeRate, so Price * shares = Total * exchangeRate).
+    // Resolve cost basis in the *instrument's own* currency (Currency (Price / share)),
+    // not the user's preferred display currency — the holding's stored currency and its
+    // costBasis must agree, or a later currency switch double-converts (see plan).
     const totalCurrency = row[iTotalCurrency]?.trim();
     const priceCurrency = row[iPriceCurrency]?.trim();
     const rawTotal = Math.abs(parseFloat(row[iTotal]) || 0);
@@ -63,14 +63,25 @@ function parseTrading212(csv: string, currency: string): ParsedImport {
     const exchangeRate = parseFloat(row[iExchangeRate]) || 1;
 
     let total: number;
-    if (totalCurrency === currency) {
+    let rowCurrency: string;
+    if (rawPrice > 0) {
+      // Price/share is populated: native cost is price x shares, already in priceCurrency.
+      total = Math.abs(rawPrice * shares);
+      rowCurrency = priceCurrency || currency;
+    } else if (totalCurrency === currency) {
+      // No price data (e.g. some corporate-action rows); fall back to whichever total
+      // column we can trust, and tag the row with the currency that total is actually in.
       total = rawTotal;
+      rowCurrency = totalCurrency;
     } else if (priceCurrency === currency) {
       total = Math.abs(rawPrice * shares);
+      rowCurrency = priceCurrency;
     } else {
-      // Convert from account base currency to preferred currency via exchange rate.
-      // exchangeRate = priceCurrency per totalCurrency (e.g. USD per GBP).
+      // Convert from account base currency to instrument currency via exchange rate.
+      // exchangeRate = priceCurrency per totalCurrency (e.g. USD per GBP), so
+      // Total * exchangeRate lands in priceCurrency.
       total = rawTotal * exchangeRate;
+      rowCurrency = priceCurrency || totalCurrency || currency;
     }
 
     if (!ticker || !action) continue;
@@ -96,7 +107,7 @@ function parseTrading212(csv: string, currency: string): ParsedImport {
       continue;
     }
 
-    if (!map.has(ticker)) map.set(ticker, { units: 0, costBasis: 0, name });
+    if (!map.has(ticker)) map.set(ticker, { units: 0, costBasis: 0, name, currency: rowCurrency });
 
     const entry = map.get(ticker)!;
 
@@ -124,6 +135,7 @@ function parseTrading212(csv: string, currency: string): ParsedImport {
         name: e.name,
         units: parseFloat(e.units.toFixed(8)),
         costBasis: parseFloat(e.costBasis.toFixed(2)),
+        currency: e.currency,
       })),
     dividends,
   };
@@ -133,7 +145,7 @@ function parseTrading212(csv: string, currency: string): ParsedImport {
 // Freetrade (basic export format)
 // ---------------------------------------------------------------------------
 
-function parseFreetrade(csv: string, _currency: string): ParsedImport {
+function parseFreetrade(csv: string, currency: string): ParsedImport {
   const lines = csv.trim().split('\n');
   const header = lines[0].split(',').map(h => h.replace(/"/g, '').trim());
 
@@ -146,7 +158,7 @@ function parseFreetrade(csv: string, _currency: string): ParsedImport {
   const iTimestamp = col('Timestamp');
   const iAccountCurrency = col('Account Currency');
 
-  type Entry = { units: number; costBasis: number; name: string };
+  type Entry = { units: number; costBasis: number; name: string; currency: string };
   const map = new Map<string, Entry>();
   const dividends: DividendRecord[] = [];
 
@@ -159,6 +171,11 @@ function parseFreetrade(csv: string, _currency: string): ParsedImport {
     const name = row[iName]?.replace(/^"|"$/g, '').trim() ?? ticker;
     const shares = parseFloat(row[iShares]) || 0;
     const total = Math.abs(parseFloat(row[iTotal]) || 0);
+    // Freetrade exports only give account-currency totals, no reliable per-instrument
+    // currency — tag holdings with the account currency (falling back to the display
+    // currency param); the feed-currency decoupling in applyLivePrices is what makes
+    // live *values* correct despite this.
+    const accountCurrency = (iAccountCurrency !== -1 ? row[iAccountCurrency]?.trim() : '') || currency;
 
     if (!ticker || !type) continue;
 
@@ -172,13 +189,13 @@ function parseFreetrade(csv: string, _currency: string): ParsedImport {
           ticker,
           name,
           amount: total,
-          currency: ((iAccountCurrency !== -1 ? row[iAccountCurrency]?.trim() : '') || 'GBP'),
+          currency: accountCurrency || 'GBP',
         });
       }
       continue;
     }
 
-    if (!map.has(ticker)) map.set(ticker, { units: 0, costBasis: 0, name });
+    if (!map.has(ticker)) map.set(ticker, { units: 0, costBasis: 0, name, currency: accountCurrency });
     const entry = map.get(ticker)!;
 
     if (type === 'buy') {
@@ -199,6 +216,7 @@ function parseFreetrade(csv: string, _currency: string): ParsedImport {
         name: e.name,
         units: parseFloat(e.units.toFixed(8)),
         costBasis: parseFloat(e.costBasis.toFixed(2)),
+        currency: e.currency,
       })),
     dividends,
   };
@@ -226,6 +244,9 @@ function parseHL(csv: string, _currency: string): ParsedImport {
   type Entry = { units: number; costBasis: number; name: string };
   const map = new Map<string, Entry>();
   const dividends: DividendRecord[] = [];
+  // HL transaction exports don't carry a reliable per-instrument currency; the
+  // account (and this parser) is always GBP.
+  const HL_CURRENCY = 'GBP';
 
   for (let i = headerIdx + 1; i < lines.length; i++) {
     const row = parseCSVRow(lines[i]);
@@ -279,6 +300,7 @@ function parseHL(csv: string, _currency: string): ParsedImport {
         name: e.name,
         units: parseFloat(e.units.toFixed(8)),
         costBasis: parseFloat(e.costBasis.toFixed(2)),
+        currency: HL_CURRENCY,
       })),
     dividends,
   };
@@ -288,7 +310,11 @@ function parseHL(csv: string, _currency: string): ParsedImport {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function parseCSVRow(line: string): string[] {
+function parseCSVRow(rawLine: string): string[] {
+  // Windows/CRLF broker exports (e.g. Trading 212) leave a trailing \r on the last
+  // column of every row when the file is split on '\n' alone. Strip it here so it
+  // never corrupts the last column (Currency (Total) / ID).
+  const line = rawLine.replace(/\r$/, '');
   const result: string[] = [];
   let current = '';
   let inQuotes = false;

@@ -18,6 +18,18 @@ describe('parseTrading212', () => {
     expect(result).toHaveLength(1);
     expect(result[0].units).toBeCloseTo(10, 8);
     expect(result[0].costBasis).toBeCloseTo(1000, 2);
+    expect(result[0].currency).toBe('GBP');
+  });
+
+  it('captures the instrument currency (Currency (Price / share)) on the holding for a non-GBP ticker', () => {
+    const csv = [
+      T212_HEADER,
+      'Market buy,AAPL,Apple,10,230,USD,1,1725,GBP',
+    ].join('\n');
+    const result = t212(csv, 'GBP').holdings;
+    expect(result).toHaveLength(1);
+    expect(result[0].currency).toBe('USD');
+    expect(result[0].costBasis).toBeCloseTo(2300, 2); // 230 x 10, in USD — not the Total column's 1725 GBP
   });
 
   it('reduces costBasis proportionally on sell, and treats negative Total values as absolute (sign-safety)', () => {
@@ -69,31 +81,46 @@ describe('parseTrading212', () => {
     expect(result[0].name).toBe('Alphabet, Inc.');
   });
 
-  it('currency resolution (a): uses Total when Currency (Total) matches user currency', () => {
+  it('uses Price/share x shares (in the instrument currency) as cost whenever a price is present', () => {
     const csv = [
       T212_HEADER,
       'Market buy,X,X,1,999,USD,1,100,GBP',
     ].join('\n');
     const result = t212(csv, 'GBP').holdings;
-    expect(result[0].costBasis).toBeCloseTo(100, 2);
+    // Price is populated (999), so cost = 999 x 1 share, tagged USD — not the
+    // Total column's 100 GBP. Cost and currency must travel together.
+    expect(result[0].costBasis).toBeCloseTo(999, 2);
+    expect(result[0].currency).toBe('USD');
   });
 
-  it('currency resolution (b): uses price x shares when Currency (Price / share) matches user currency', () => {
+  it('uses price x shares when Currency (Price / share) matches user currency', () => {
     const csv = [
       T212_HEADER,
       'Market buy,Y,Y,2,50,USD,1,999,GBP',
     ].join('\n');
     const result = t212(csv, 'USD').holdings;
     expect(result[0].costBasis).toBeCloseTo(100, 2);
+    expect(result[0].currency).toBe('USD');
   });
 
-  it('currency resolution (c): neither matches, so Total x exchange rate is used', () => {
+  it('currency resolution fallback: no price data, neither Total nor Price currency matches, so Total x exchange rate is used', () => {
     const csv = [
       T212_HEADER,
-      'Market buy,Z,Z,1,10,EUR,1.25,80,GBP',
+      'Market buy,Z,Z,1,0,EUR,1.25,80,GBP',
     ].join('\n');
     const result = t212(csv, 'USD').holdings;
     expect(result[0].costBasis).toBeCloseTo(100, 2);
+    expect(result[0].currency).toBe('EUR');
+  });
+
+  it('currency resolution fallback: no price data, Total currency matches user currency', () => {
+    const csv = [
+      T212_HEADER,
+      'Market buy,X2,X2,1,0,USD,1,100,GBP',
+    ].join('\n');
+    const result = t212(csv, 'GBP').holdings;
+    expect(result[0].costBasis).toBeCloseTo(100, 2);
+    expect(result[0].currency).toBe('GBP');
   });
 
   it('excludes holdings with zero remaining units from the output', () => {
@@ -104,6 +131,20 @@ describe('parseTrading212', () => {
     ].join('\n');
     const result = t212(csv, 'GBP').holdings;
     expect(result.find(h => h.ticker === 'W')).toBeUndefined();
+  });
+
+  it('strips a trailing CRLF carriage return so the last column (Currency (Total)) is a clean ISO code', () => {
+    const csv = [
+      T212_DIV_HEADER,
+      'Market buy,2025-01-02 10:00:00,tx1,AAPL,Apple,5,100,GBP,1,500,GBP',
+      'Dividend (Ordinary),2025-03-10 14:30:00,tx2,AAPL,Apple,5,0.24,USD,1.27,0.95,GBP',
+    ].join('\r\n') + '\r\n';
+    const result = t212(csv, 'GBP');
+    expect(result.holdings).toHaveLength(1);
+    expect(result.holdings[0].currency).toBe('GBP');
+    expect(result.dividends).toHaveLength(1);
+    expect(result.dividends[0].currency).toBe('GBP');
+    expect(result.dividends[0].currency.endsWith('\r')).toBe(false);
   });
 });
 
@@ -118,6 +159,16 @@ describe('parseFreetrade', () => {
     expect(result).toHaveLength(1);
     expect(result[0].units).toBeCloseTo(60, 8);
     expect(result[0].costBasis).toBeCloseTo(30, 2);
+    expect(result[0].currency).toBe('GBP');
+  });
+
+  it('tags holdings with the Account Currency column when present', () => {
+    const csv = [
+      'Type,Symbol,Title,Quantity,Total Amount,Account Currency',
+      'buy,AAPL,Apple,10,2000,USD',
+    ].join('\n');
+    const result = freetrade(csv, 'GBP').holdings;
+    expect(result[0].currency).toBe('USD');
   });
 });
 
@@ -133,6 +184,7 @@ describe('parseHL', () => {
     expect(result[0].name).toBe('HSBC Holdings');
     expect(result[0].units).toBeCloseTo(1000, 8);
     expect(result[0].costBasis).toBeCloseTo(1000, 2);
+    expect(result[0].currency).toBe('GBP');
   });
 });
 

@@ -9,7 +9,7 @@ import { loadFromSupabase, saveToSupabase, loadFundHoldings, saveFundHolding, de
 import { cacheAppData, readCachedAppData } from './lib/localCache';
 
 const ADMIN_EMAIL = import.meta.env.VITE_ADMIN_EMAIL as string | undefined;
-import { fetchLivePrices } from './lib/firebasePrices';
+import { fetchLivePrices, fetchPriceCurrencies } from './lib/firebasePrices';
 import { fetchFxRates, type FxRates } from './lib/fxRates';
 import { withTodaySnapshots } from './lib/snapshots';
 import { applyLivePrices } from './lib/applyLivePrices';
@@ -42,6 +42,7 @@ export default function App() {
   const baseData = useRef<AppData>(defaultData);
   const loadedForUser = useRef<string | null>(null);
   const livePricesRef = useRef<Record<string, number>>({});
+  const priceCurrenciesRef = useRef<Record<string, string>>({});
   const fxRatesRef = useRef<FxRates>({ GBP: 1 });
   // scheduleSave closes over stale state, so it reads the degraded flag via a ref.
   const degradedRef = useRef(false);
@@ -127,12 +128,14 @@ export default function App() {
     const tickers = [...new Set(base.providers.flatMap(p => p.holdings.map(h => h.ticker).filter(Boolean) as string[]))];
     setLivePricesLoading(true);
     try {
-      const [prices, rates] = await Promise.all([
+      const [prices, rates, priceCcys] = await Promise.all([
         tickers.length > 0 ? fetchLivePrices(tickers) : Promise.resolve(livePricesRef.current),
         fetchFxRates(),
+        tickers.length > 0 ? fetchPriceCurrencies(tickers) : Promise.resolve(priceCurrenciesRef.current),
       ]);
       livePricesRef.current = prices;
       fxRatesRef.current = rates;
+      priceCurrenciesRef.current = priceCcys;
       setLivePrices(prices);
       setFxRates(rates);
       const snapped = withTodaySnapshots(base, prices, rates);
@@ -140,7 +143,7 @@ export default function App() {
         baseData.current = snapped;
         scheduleSave(snapped);
       }
-      setData(applyLivePrices(snapped, prices, rates));
+      setData(applyLivePrices(snapped, prices, rates, priceCcys));
       setLivePricesUpdatedAt(new Date());
     } catch (err) {
       console.warn('Live price refresh failed:', err);
@@ -159,7 +162,7 @@ export default function App() {
   const handleChange = useCallback((next: AppData) => {
     const snapped = withTodaySnapshots(next, livePricesRef.current, fxRatesRef.current);
     baseData.current = snapped;
-    setData(applyLivePrices(snapped, livePricesRef.current, fxRatesRef.current));
+    setData(applyLivePrices(snapped, livePricesRef.current, fxRatesRef.current, priceCurrenciesRef.current));
     scheduleSave(snapped);
   }, [scheduleSave]);
 

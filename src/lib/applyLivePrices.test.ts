@@ -82,4 +82,28 @@ describe('applyLivePrices', () => {
     const result = applyLivePrices(data, { AAA: 10.38 }, { GBP: 1 });
     expect(result.providers[0].holdings[0].currentValue).toBeCloseTo(103.8, 8);
   });
+
+  // Regression (PLAN-08-07-round-csv-import-currency): a CSV-imported holding may be
+  // mistagged/defaulted to GBP while its live price actually arrives in USD. The price
+  // currency must come from the feed (priceCurrencies), not the holding's own currency.
+  it('uses the feed price currency, not the holding currency, to convert a live price', () => {
+    const holding: Holding = { id: 'h1', name: 'Apple', ticker: 'AAPL', units: 10, currency: 'GBP' };
+    const data = makeData([makeProvider([holding])]);
+    const result = applyLivePrices(
+      data,
+      { AAPL: 250 },
+      { GBP: 1, USD: 1.25 },
+      { AAPL: 'USD' },
+    );
+    const h = result.providers[0].holdings[0];
+    expect(h.currentPrice).toBeCloseTo(250 / 1.25, 8);
+    expect(h.currentValue).toBeCloseTo(10 * (250 / 1.25), 8);
+  });
+
+  it('defaults priceCurrencies to {} so existing callers/tests are unaffected', () => {
+    const holding: Holding = { id: 'h1', name: 'Apple', ticker: 'AAPL', units: 10, currency: 'USD' };
+    const data = makeData([makeProvider([holding])], 'USD');
+    const result = applyLivePrices(data, { AAPL: 250 }, { GBP: 1, USD: 1.25 });
+    expect(result.providers[0].holdings[0].currentPrice).toBe(250);
+  });
 });

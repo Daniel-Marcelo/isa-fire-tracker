@@ -137,6 +137,7 @@ const owners = ['All', ...OWNERS] as const;
             units: ph.units,
             manualValue: ph.costBasis,
             costBasis: ph.costBasis,
+            currency: ph.currency,
           }));
         } else {
           const existing = [...p.holdings];
@@ -146,6 +147,8 @@ const owners = ['All', ...OWNERS] as const;
               match.units = (match.units ?? 0) + ph.units;
               match.costBasis = (match.costBasis ?? 0) + ph.costBasis;
               match.manualValue = (match.manualValue ?? 0) + ph.costBasis;
+              // Do not overwrite an existing holding's currency on re-import — a
+              // manually-set (or previously imported) currency must not flip.
             } else {
               existing.push({
                 id: uid(),
@@ -154,6 +157,7 @@ const owners = ['All', ...OWNERS] as const;
                 units: ph.units,
                 manualValue: ph.costBasis,
                 costBasis: ph.costBasis,
+                currency: ph.currency,
               });
             }
           }

@@ -87,6 +87,18 @@ export async function fetchLivePrices(tickers: string[]): Promise<Record<string,
   return results;
 }
 
+export async function fetchPriceCurrencies(tickers: string[]): Promise<Record<string, string>> {
+  if (tickers.length === 0) return {};
+  const all = await getAllStocks();
+  const bySymbol = new Map(all.map(s => [s.symbol.toUpperCase(), s.currency]));
+  const out: Record<string, string> = {};
+  for (const t of tickers) {
+    const c = bySymbol.get(t.toUpperCase());
+    if (c) out[t] = c;
+  }
+  return out;
+}
+
 export async function fetchTickerInfo(ticker: string): Promise<TickerInfo | null> {
   const res = await fetch(`${FIRESTORE_BASE}/stocks/${ticker}`);
   if (!res.ok) return null;
