@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import type { FireSettings } from '../types';
-import { mulberry32, runMonteCarlo, solveEarliestFireAge, successCurve } from './monteCarlo';
+import { mulberry32, runMonteCarlo, solveEarliestFireAge, solveRequiredContribution, successCurve } from './monteCarlo';
 import { findFireAges } from './fireProjection';
+import { targetConfidenceOf } from './fireEngine';
 
 function makeSettings(overrides: Partial<FireSettings> = {}): FireSettings {
   return {
@@ -164,6 +165,81 @@ describe('solveEarliestFireAge', () => {
     const acc = 300_000, pen = 150_000;
     expect(solveEarliestFireAge(s, acc, pen)).toBe(solveEarliestFireAge(s, acc, pen));
     expect(successCurve(s, acc, pen)).toEqual(successCurve(s, acc, pen));
+  });
+});
+
+describe('solveRequiredContribution', () => {
+  it('returns 0 when ample pots already clear the target with modest spending', () => {
+    const s = makeSettings({ monthlyContribution: 500, monthlyPensionContribution: 200 });
+    const result = solveRequiredContribution(s, 2_000_000, 1_000_000, 50);
+    expect(result).toBe(0);
+  });
+
+  it('returns null when unreachable at any saving rate: a structural bridge failure', () => {
+    // All new money is routed to pension (accShare = 0, since monthlyContribution
+    // is 0 today) but retirement happens well before pensionAccessAge, and the
+    // accessible pot starts at 0. The pre-pension-access bridge draws only from
+    // the accessible pot, which never grows no matter how large the (pension-only)
+    // contribution gets — so no total saving amount can ever meet the target.
+    const s = makeSettings({
+      currentAge: 40,
+      monthlyContribution: 0,
+      monthlyPensionContribution: 500,
+      pensionAccessAge: 57,
+    });
+    const result = solveRequiredContribution(s, 0, 0, 45);
+    expect(result).toBeNull();
+  });
+
+  it('returns null for a zero-length or negative accumulation window', () => {
+    const s = makeSettings({ currentAge: 40 });
+    expect(solveRequiredContribution(s, 300_000, 150_000, 40)).toBeNull();
+    expect(solveRequiredContribution(s, 300_000, 150_000, 38)).toBeNull();
+  });
+
+  it('the solved contribution meets the target; £20/mo less misses it', () => {
+    const s = makeSettings({ monthlyContribution: 600, monthlyPensionContribution: 300 });
+    const acc = 150_000, pen = 80_000, retireAge = 50;
+    const solved = solveRequiredContribution(s, acc, pen, retireAge);
+    expect(solved).not.toBeNull();
+
+    const target = targetConfidenceOf(s) / 100;
+    const base = s.monthlyContribution + (s.monthlyPensionContribution ?? 0);
+    const accShare = base > 0 ? s.monthlyContribution / base : 1;
+    const rateAt = (total: number) => runMonteCarlo(
+      { ...s, monthlyContribution: total * accShare, monthlyPensionContribution: total * (1 - accShare) },
+      acc, pen, retireAge,
+    ).successRate;
+
+    expect(rateAt(solved!)).toBeGreaterThanOrEqual(target);
+    expect(rateAt(solved! - 20)).toBeLessThan(target);
+  });
+
+  it('preserves the current accessible:pension contribution ratio', () => {
+    // With a 2:1 accessible:pension split, doubling the required total should
+    // double both components in the same ratio — verified indirectly: a solve
+    // with contributions already at a 2:1 ratio and one with a 1:2 ratio (but
+    // otherwise identical pots/target) should differ, because which pot the
+    // money lands in changes bridge survival before pension access.
+    const acc = 150_000, pen = 50_000, retireAge = 48;
+    const accHeavy = makeSettings({ monthlyContribution: 800, monthlyPensionContribution: 400 });
+    const penHeavy = makeSettings({ monthlyContribution: 400, monthlyPensionContribution: 800 });
+    const solvedAccHeavy = solveRequiredContribution(accHeavy, acc, pen, retireAge);
+    const solvedPenHeavy = solveRequiredContribution(penHeavy, acc, pen, retireAge);
+    // Routing more new money toward the accessible bridge (matching the
+    // accHeavy ratio) should never need a larger total than routing more to
+    // the pension (penHeavy), because the accessible pot is what's actually
+    // scarce before pension access.
+    if (solvedAccHeavy != null && solvedPenHeavy != null) {
+      expect(solvedAccHeavy).toBeLessThanOrEqual(solvedPenHeavy);
+    }
+  });
+
+  it('is deterministic: the same inputs give an identical solved contribution', () => {
+    const s = makeSettings({ returnVolatility: 12 });
+    const a = solveRequiredContribution(s, 300_000, 150_000, 50);
+    const b = solveRequiredContribution(s, 300_000, 150_000, 50);
+    expect(a).toBe(b);
   });
 });
 

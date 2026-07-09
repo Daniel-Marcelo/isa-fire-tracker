@@ -173,6 +173,60 @@ export function solveEarliestFireAge(
 }
 
 /**
+ * Smallest total monthly contribution (accessible + pension combined) whose Monte Carlo
+ * success rate at `retireAge` meets the settings' target confidence, holding the current
+ * accessible:pension contribution ratio fixed. Returns null if even a very large
+ * contribution can't reach the target (e.g. retireAge below currentAge, or spending so
+ * high the bridge fails structurally), and 0 if the current pots already suffice with no
+ * contributions.
+ */
+export function solveRequiredContribution(
+  settings: FireSettings,
+  accessibleStart: number,
+  pensionStart: number,
+  retireAge: number,
+  opts: MonteCarloOptions = {},
+): number | null {
+  // A zero-length (or negative) accumulation window can't be solved for.
+  if (retireAge <= settings.currentAge) return null;
+
+  const target = targetConfidenceOf(settings) / 100;
+  const acc0 = Math.max(settings.monthlyContribution, 0);
+  const pen0 = Math.max(settings.monthlyPensionContribution ?? 0, 0);
+  const base = acc0 + pen0;
+  // Split ratio: if the user contributes nothing today, route new money to accessible
+  // (the ISA bridge is what usually binds for early retirement).
+  const accShare = base > 0 ? acc0 / base : 1;
+
+  const rateAt = (total: number) => {
+    const s2: FireSettings = {
+      ...settings,
+      monthlyContribution: total * accShare,
+      monthlyPensionContribution: total * (1 - accShare),
+    };
+    return runMonteCarlo(s2, accessibleStart, pensionStart, retireAge,
+      { runs: opts.runs ?? DEFAULT_RUNS, seed: opts.seed ?? MC_SEED, endAge: opts.endAge }).successRate;
+  };
+
+  if (rateAt(0) >= target) return 0;
+
+  // Find an upper bound that meets the target (double until it does, capped).
+  let hi = Math.max(base, 500);
+  let guard = 0;
+  while (rateAt(hi) < target) {
+    hi *= 2;
+    if (++guard > 20) return null;         // unreachable at any sane saving rate
+  }
+  let lo = 0;
+  // Binary search to ~£10/month resolution.
+  while (hi - lo > 10) {
+    const mid = (lo + hi) / 2;
+    if (rateAt(mid) >= target) hi = mid; else lo = mid;
+  }
+  return Math.ceil(hi / 10) * 10;          // round up to the nearest £10, stay >= target
+}
+
+/**
  * Success probability at whole-number retirement ages, for the confidence-vs-age
  * curve. Uses fewer runs than the headline number (chart resolution doesn't need
  * 1,000) but the same fixed seed. Stops once the rate clears 99% twice in a row,
