@@ -21,4 +21,14 @@ describe('convertAmount', () => {
   it('falls back to rate 1 for an unknown currency (documents current behaviour)', () => {
     expect(convertAmount(100, 'XYZ', 'GBP', { GBP: 1 })).toBe(100);
   });
+
+  it('converts between two non-GBP currencies via the GBP-base cross rate', () => {
+    const rates = { GBP: 1, USD: 1.25, EUR: 1.17 };
+    // 125 USD -> GBP (100) -> EUR (117), done in one step via the toRate/fromRate ratio.
+    expect(convertAmount(125, 'USD', 'EUR', rates)).toBeCloseTo(125 * (1.17 / 1.25), 8);
+  });
+
+  it('returns the amount unchanged when rates is empty, regardless of target currency', () => {
+    expect(convertAmount(100, 'USD', 'EUR', {})).toBe(100);
+  });
 });

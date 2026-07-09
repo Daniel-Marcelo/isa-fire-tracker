@@ -76,6 +76,29 @@ describe('withTodaySnapshots', () => {
   });
 });
 
+describe('providerGbpTotal — currency conversion and trust rules (money-pipeline regression)', () => {
+  it('converts a USD holding to GBP using fxRates', () => {
+    const holding: Holding = { id: 'h1', name: 'A', manualValue: 125, currency: 'USD' };
+    const provider = makeProvider([holding]);
+    const total = providerGbpTotal(provider, {}, { GBP: 1, USD: 1.25 });
+    expect(total).toBeCloseTo(100, 8); // 125 / 1.25
+  });
+
+  it('returns null when a ticker\'d holding with units has no live price (pinned so the rank-3 fix does not weaken this guarantee)', () => {
+    const holding: Holding = { id: 'h1', name: 'B', ticker: 'BBB', units: 5, currency: 'GBP' };
+    const provider = makeProvider([holding]);
+    const total = providerGbpTotal(provider, {}, { GBP: 1 });
+    expect(total).toBeNull();
+  });
+
+  it('returns null when a non-GBP holding\'s currency is absent from fxRates', () => {
+    const holding: Holding = { id: 'h1', name: 'C', manualValue: 100, currency: 'JPY' };
+    const provider = makeProvider([holding]);
+    const total = providerGbpTotal(provider, {}, { GBP: 1, USD: 1.25 });
+    expect(total).toBeNull();
+  });
+});
+
 describe('providerGbpTotal — legacy GBp currency code', () => {
   // providerGbpTotal checks `holding.currency` directly against fxRates without
   // running it through convertAmount's pence-normalisation (which maps 'GBp' -> 'GBP').
