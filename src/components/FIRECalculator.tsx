@@ -7,7 +7,7 @@ import type { AppData, FireSettings } from '../types';
 import { useCurrency } from '../contexts/CurrencyContext';
 import { project } from '../lib/fireProjection';
 import { planToAgeOf, targetConfidenceOf } from '../lib/fireEngine';
-import type { FireCalcRequest, FireCalcResult } from '../lib/fireWorker';
+import { runFireCalc, type FireCalcRequest, type FireCalcResult } from '../lib/fireCalc';
 import { isPensionType } from '../utils';
 
 interface Props {
@@ -91,6 +91,9 @@ export default function FIRECalculator({ data, rawData, onChange }: Props) {
   const reqIdRef = useRef(0);
   const [calc, setCalc] = useState<FireCalcResult | null>(null);
   const [isRecomputing, setIsRecomputing] = useState(true);
+  // True when the currently-displayed `calc` (or the absence of one) came from
+  // the main-thread fallback rather than a healthy worker round-trip.
+  const [calcError, setCalcError] = useState(false);
 
   // Terminate the worker on unmount so it doesn't outlive the component.
   useEffect(() => () => workerRef.current?.terminate(), []);
@@ -101,22 +104,70 @@ export default function FIRECalculator({ data, rawData, onChange }: Props) {
   // dispatch spins up a fresh worker — we don't want one per character. On each
   // dispatch we terminate() any in-flight job: it can't be interrupted by a new
   // message, so killing it lets the newest edit compute now instead of waiting.
+  //
+  // Resilience: the worker can fail to instantiate (stale PWA cache serving a
+  // 404 chunk), throw at runtime, or simply hang. Every failure path falls back
+  // to computing the identical logic (runFireCalc) on the main thread so a
+  // number always eventually appears instead of a permanent spinner.
   useEffect(() => {
     setIsRecomputing(true);
+    let watchdog: ReturnType<typeof setTimeout> | undefined;
     const t = setTimeout(() => {
       workerRef.current?.terminate();
-      const w = new Worker(new URL('../lib/fireWorker.ts', import.meta.url), { type: 'module' });
       const id = ++reqIdRef.current;
-      w.onmessage = (e: MessageEvent<FireCalcResult>) => {
-        if (e.data.id !== id) return; // ignore a straggler from a killed worker
-        setCalc(e.data);
-        setIsRecomputing(false);
+      // The watchdog and onerror can both fire for the same failure; this flag
+      // ensures only the first one runs the fallback.
+      let settled = false;
+
+      const runOnMainThread = () => {
+        // Deferred so this doesn't run inside the onerror/watchdog callback
+        // stack while the terminated worker is still unwinding.
+        setTimeout(() => {
+          if (id !== reqIdRef.current) return; // a newer edit superseded this attempt
+          try {
+            const result = runFireCalc({ id, settings: s, accessible: accessibleValue, pension: pensionValue });
+            setCalc(result);
+            setCalcError(true);
+          } catch {
+            setCalcError(true);
+          } finally {
+            setIsRecomputing(false);
+          }
+        }, 0);
       };
-      workerRef.current = w;
-      const req: FireCalcRequest = { id, settings: s, accessible: accessibleValue, pension: pensionValue };
-      w.postMessage(req);
+
+      try {
+        const w = new Worker(new URL('../lib/fireWorker.ts', import.meta.url), { type: 'module' });
+        workerRef.current = w;
+        w.onmessage = (e: MessageEvent<FireCalcResult>) => {
+          if (e.data.id !== id || settled) return; // ignore a straggler from a killed worker
+          settled = true;
+          clearTimeout(watchdog);
+          setCalc(e.data);
+          setCalcError(false);
+          setIsRecomputing(false);
+        };
+        w.onerror = () => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(watchdog);
+          w.terminate();
+          runOnMainThread();
+        };
+        watchdog = setTimeout(() => {
+          if (settled) return;
+          settled = true;
+          w.terminate();
+          runOnMainThread();
+        }, 8000);
+        const req: FireCalcRequest = { id, settings: s, accessible: accessibleValue, pension: pensionValue };
+        w.postMessage(req);
+      } catch {
+        // Worker construction itself threw (e.g. module workers unsupported).
+        runOnMainThread();
+      }
     }, 300);
-    return () => clearTimeout(t);
+    return () => { clearTimeout(t); clearTimeout(watchdog); };
   }, [s, accessibleValue, pensionValue]);
 
   const solvedAge = calc?.solvedAge ?? null;
@@ -396,16 +447,18 @@ export default function FIRECalculator({ data, rawData, onChange }: Props) {
             <div>
               <p className="text-xs text-slate-500 font-medium uppercase tracking-wide flex items-center gap-2">FIRE age {isRecomputing && <Spinner label="Calculating…" />}</p>
               <p className="text-3xl font-bold text-slate-50 tabular-nums">
-                {solvedAge != null ? `Age ${solvedAge.toFixed(1)}` : awaitingFirst ? '…' : '—'}
+                {solvedAge != null ? `Age ${solvedAge.toFixed(1)}` : awaitingFirst && calcError ? "Couldn't compute" : awaitingFirst ? '…' : '—'}
               </p>
               <p className="text-xs text-slate-600 mt-0.5">
                 {solvedAge != null
                   ? `Earliest retirement with ≥${confTarget}% confidence${smoothAge != null ? ` · smooth-market estimate: ${smoothAge.toFixed(1)}` : ''}`
-                  : awaitingFirst
-                    ? 'Estimating your earliest retirement age…'
-                    : degenerateHorizon
-                      ? 'Plan-to age must be beyond your current age'
-                      : `Not reachable by ${planTo} at ${confTarget}% — lower the confidence target, spending, or check contributions.`}
+                  : awaitingFirst && calcError
+                    ? "Couldn't compute a projection — check your inputs."
+                    : awaitingFirst
+                      ? 'Estimating your earliest retirement age…'
+                      : degenerateHorizon
+                        ? 'Plan-to age must be beyond your current age'
+                        : `Not reachable by ${planTo} at ${confTarget}% — lower the confidence target, spending, or check contributions.`}
               </p>
             </div>
           ) : (
@@ -416,9 +469,13 @@ export default function FIRECalculator({ data, rawData, onChange }: Props) {
               <div>
                 <p className="text-xs text-slate-500 font-medium uppercase tracking-wide flex items-center gap-2">Confidence {isRecomputing && <Spinner label="Calculating…" />}</p>
                 <p className={`text-3xl font-bold tabular-nums ${confidenceColor(confidence)}`}>
-                  {confidence != null ? `${(confidence * 100).toFixed(0)}%` : awaitingFirst ? '…' : '—'}
+                  {confidence != null ? `${(confidence * 100).toFixed(0)}%` : awaitingFirst && calcError ? "Couldn't compute" : awaitingFirst ? '…' : '—'}
                 </p>
-                <p className="text-xs text-slate-600 mt-0.5">chance your money lasts to {planTo} retiring at {chosenAge}</p>
+                <p className="text-xs text-slate-600 mt-0.5">
+                  {awaitingFirst && calcError
+                    ? "Couldn't compute a projection — check your inputs."
+                    : `chance your money lasts to ${planTo} retiring at ${chosenAge}`}
+                </p>
               </div>
             </>
           )}
@@ -449,7 +506,10 @@ export default function FIRECalculator({ data, rawData, onChange }: Props) {
       <div className="bg-slate-800/70 rounded-xl border border-slate-700/50 p-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <h3 className="font-semibold text-slate-100 flex items-center gap-2">Market risk {isRecomputing && <Spinner />}</h3>
+            <h3 className="font-semibold text-slate-100 flex items-center gap-2">
+              Market risk {isRecomputing && <Spinner />}
+              {calcError && calc != null && <span className="text-[10px] font-normal normal-case text-slate-600">computed on this device</span>}
+            </h3>
             <p className="text-xs text-slate-600 mt-0.5">
               {mc
                 ? `${mc.runs.toLocaleString()} simulated market histories at ${(s.returnVolatility ?? 15).toFixed(0)}% volatility, retiring at ${headlineAge?.toFixed(1)}`
