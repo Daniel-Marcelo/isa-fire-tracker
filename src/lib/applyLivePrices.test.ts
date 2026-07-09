@@ -106,4 +106,30 @@ describe('applyLivePrices', () => {
     const result = applyLivePrices(data, { AAPL: 250 }, { GBP: 1, USD: 1.25 });
     expect(result.providers[0].holdings[0].currentPrice).toBe(250);
   });
+
+  // Money-pipeline regression (PLAN-08-07-round-money-pipeline-tests): a correctly-tagged
+  // US holding (currency set, as the CSV-import fix now guarantees) must render correctly
+  // under any display currency — the case the rank-1 bug broke when currency was missing.
+  describe('non-GBP holding renders correctly regardless of display currency', () => {
+    const holding: Holding = { id: 'h1', name: 'Apple', ticker: 'AAPL', units: 10, currency: 'USD', costBasis: 1000 };
+    const rates = { GBP: 1, USD: 1.25 };
+
+    it('display currency GBP: price/value/costBasis all convert from USD', () => {
+      const data = makeData([makeProvider([holding])], 'GBP');
+      const result = applyLivePrices(data, { AAPL: 250 }, rates);
+      const h = result.providers[0].holdings[0];
+      expect(h.currentPrice).toBeCloseTo(200, 8); // 250 / 1.25
+      expect(h.currentValue).toBeCloseTo(2000, 8); // 10 x 200
+      expect(h.costBasis).toBeCloseTo(800, 8); // 1000 / 1.25
+    });
+
+    it('display currency USD: identity, no conversion drift', () => {
+      const data = makeData([makeProvider([holding])], 'USD');
+      const result = applyLivePrices(data, { AAPL: 250 }, rates);
+      const h = result.providers[0].holdings[0];
+      expect(h.currentPrice).toBe(250);
+      expect(h.currentValue).toBe(2500);
+      expect(h.costBasis).toBe(1000);
+    });
+  });
 });
