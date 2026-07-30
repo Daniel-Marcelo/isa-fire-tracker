@@ -5,14 +5,15 @@ import type { User } from '@supabase/supabase-js';
 import type { AppData, UploadedFundHoldings } from './types';
 import { defaultData, exportData, importData, migrateAppData } from './store';
 import { supabase } from './lib/supabase';
-import { loadFromSupabase, saveToSupabase, loadFundHoldings, saveFundHolding, deleteFundHolding } from './lib/db';
+import { loadFromSupabase, saveToSupabase, loadFundHoldings, saveFundHolding, deleteFundHolding, ConflictError } from './lib/db';
 import { cacheAppData, readCachedAppData } from './lib/localCache';
 
 const ADMIN_EMAIL = import.meta.env.VITE_ADMIN_EMAIL as string | undefined;
-import { fetchLivePrices, fetchPriceCurrencies } from './lib/firebasePrices';
+import { fetchQuotes, PRICE_WARN_AGE_MS, type Quote } from './lib/firebasePrices';
 import { fetchFxRates, type FxRates } from './lib/fxRates';
-import { withTodaySnapshots } from './lib/snapshots';
+import { withTodaySnapshots, type PriceAges } from './lib/snapshots';
 import { applyLivePrices } from './lib/applyLivePrices';
+import { toGbpView } from './lib/gbpView';
 import { formatCurrency, formatCurrencyShort, SUPPORTED_CURRENCIES } from './utils';
 import { CurrencyContext } from './contexts/CurrencyContext';
 import ISATracker from './components/ISATracker';
@@ -29,28 +30,59 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [data, setData] = useState<AppData>(defaultData);
+  // The same portfolio valued in GBP regardless of the user's display currency.
+  // The FIRE tab runs on this: its inputs (spending, contributions, state pension)
+  // are inherently sterling, so feeding it display-converted pots would draw a
+  // $-denominated pot down by £-denominated spending.
+  const [gbpData, setGbpData] = useState<AppData>(defaultData);
   const [dataReady, setDataReady] = useState(false);
   const [syncState, setSyncState] = useState<SyncState>('idle');
   const [degraded, setDegraded] = useState(false); // load failed: showing cache, saves blocked
+  const [conflict, setConflict] = useState(false); // remote changed elsewhere: saves blocked
   const [importError, setImportError] = useState<string | null>(null);
   const [livePrices, setLivePrices] = useState<Record<string, number>>({});
   const [livePricesUpdatedAt, setLivePricesUpdatedAt] = useState<Date | null>(null);
   const [livePricesLoading, setLivePricesLoading] = useState(false);
+  // Newest feed timestamp across all held tickers — drives the staleness warning.
+  const [newestPriceAsOf, setNewestPriceAsOf] = useState<number | null>(null);
+  const [priceAges, setPriceAges] = useState<PriceAges>({});
   const [fxRates, setFxRates] = useState<FxRates>({ GBP: 1 });
   const [fundHoldings, setFundHoldings] = useState<UploadedFundHoldings[]>([]);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const baseData = useRef<AppData>(defaultData);
   const loadedForUser = useRef<string | null>(null);
+  // Optimistic-lock counter of the row we loaded; null means "no remote row yet".
+  const versionRef = useRef<number | null>(null);
+  // Single-flight guard: two saves with the same expectedVersion would make the
+  // second one look like a conflict.
+  const savingRef = useRef(false);
+  // Latest payload awaiting the debounce, so the pagehide flush can find it.
+  const pendingRef = useRef<AppData | null>(null);
   const livePricesRef = useRef<Record<string, number>>({});
   const priceCurrenciesRef = useRef<Record<string, string>>({});
+  const priceAgesRef = useRef<PriceAges>({});
   const fxRatesRef = useRef<FxRates>({ GBP: 1 });
-  // scheduleSave closes over stale state, so it reads the degraded flag via a ref.
+  // scheduleSave closes over stale state, so it reads these flags via refs.
   const degradedRef = useRef(false);
+  const conflictRef = useRef(false);
 
   const setDegradedMode = useCallback((v: boolean) => {
     degradedRef.current = v;
     setDegraded(v);
   }, []);
+
+  const setConflictMode = useCallback((v: boolean) => {
+    conflictRef.current = v;
+    setConflict(v);
+  }, []);
+
+  /** Current GBP valuation of `base`, using the latest prices/rates. See lib/gbpView. */
+  const gbpViewNow = useCallback((base: AppData): AppData => toGbpView(
+    base,
+    livePricesRef.current,
+    fxRatesRef.current,
+    priceCurrenciesRef.current,
+  ), []);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -64,6 +96,7 @@ export default function App() {
         if (prev?.id === newUser?.id) return prev;
         if (!newUser) {
           setData(defaultData);
+          setGbpData(defaultData);
           setDataReady(false);
         }
         return newUser;
@@ -73,18 +106,57 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
+  /** The actual write. Extracted so the debounce and the pagehide flush share it. */
+  const runSave = useCallback(async (next: AppData) => {
+    if (!user) return;
+    if (degradedRef.current || conflictRef.current) return; // never write over state we don't own
+    if (savingRef.current) return;
+    savingRef.current = true;
+    setSyncState('syncing');
+    try {
+      const newVersion = await saveToSupabase(next, versionRef.current);
+      versionRef.current = newVersion;
+      cacheAppData(user.id, next, newVersion, false);
+      setSyncState('idle');
+    } catch (err) {
+      if (err instanceof ConflictError) setConflictMode(true);
+      setSyncState('error');
+    } finally {
+      savingRef.current = false;
+    }
+  }, [user, setConflictMode]);
+
   const loadData = useCallback((u: User) => {
     setDataReady(false);
     setSyncState('syncing');
     Promise.all([loadFromSupabase(), loadFundHoldings()])
       .then(([remote, funds]) => {
-        const loaded = remote ?? defaultData;
-        baseData.current = loaded;
-        setData(loaded);
+        const loaded = remote?.data ?? defaultData;
+        const remoteVersion = remote?.version ?? null;
+        versionRef.current = remoteVersion;
         setFundHoldings(funds);
-        cacheAppData(u.id, loaded);
         setDegradedMode(false);
-        setSyncState('idle');
+        setConflictMode(false);
+
+        // A dirty cache is an edit that never reached the server (tab killed
+        // mid-debounce, offline). Replay it only when it is based on exactly the
+        // version we just loaded — otherwise another device has moved on and
+        // replaying would reintroduce the clobbering this version guard prevents.
+        const cached = readCachedAppData(u.id);
+        if (cached?.dirty && cached.version === remoteVersion) {
+          const replayed = migrateAppData(cached.data);
+          baseData.current = replayed;
+          setData(replayed);
+          setGbpData(replayed);
+          void runSave(replayed);
+        } else {
+          if (cached?.dirty) console.warn('Discarding a stale unsaved local copy');
+          baseData.current = loaded;
+          setData(loaded);
+          setGbpData(loaded);
+          cacheAppData(u.id, loaded, remoteVersion, false);
+          setSyncState('idle');
+        }
         setDataReady(true);
       })
       .catch(() => {
@@ -93,14 +165,16 @@ export default function App() {
         // blocked either way so a failed load can never overwrite the
         // remote data with an empty or stale portfolio.
         const cached = readCachedAppData(u.id);
-        const fallback = cached ? migrateAppData(cached) : defaultData;
+        const fallback = cached ? migrateAppData(cached.data) : defaultData;
+        versionRef.current = null;
         baseData.current = fallback;
         setData(fallback);
+        setGbpData(fallback);
         setDegradedMode(true);
         setSyncState('error');
         setDataReady(true);
       });
-  }, [setDegradedMode]);
+  }, [setDegradedMode, setConflictMode, runSave]);
 
   useEffect(() => {
     if (!user) { loadedForUser.current = null; return; }
@@ -111,60 +185,124 @@ export default function App() {
 
   const scheduleSave = useCallback((next: AppData) => {
     if (!user) return;
-    if (degradedRef.current) return; // never save over remote state we couldn't load
+    if (degradedRef.current || conflictRef.current) return;
+    pendingRef.current = next;
+    // Written synchronously and marked dirty, so the edit survives the tab being
+    // killed before the debounce fires. Cleared to dirty=false by runSave.
+    cacheAppData(user.id, next, versionRef.current, true);
     if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => {
-      setSyncState('syncing');
-      saveToSupabase(next)
-        .then(() => {
-          cacheAppData(user.id, next);
-          setSyncState('idle');
-        })
-        .catch(() => setSyncState('error'));
+    saveTimer.current = setTimeout(function attempt() {
+      saveTimer.current = null;
+      // A save is already in flight; re-arm rather than racing it with a version
+      // that is about to be superseded.
+      if (savingRef.current) { saveTimer.current = setTimeout(attempt, 300); return; }
+      const payload = pendingRef.current;
+      pendingRef.current = null;
+      if (payload) void runSave(payload);
     }, 1000);
-  }, [user]);
+  }, [user, runSave]);
+
+  // Fire a pending save immediately when the page is hidden or unloading, instead
+  // of losing it to the debounce. pagehide (not beforeunload) is the reliable
+  // signal on mobile Safari, and sendBeacon can't carry PostgREST's auth headers.
+  useEffect(() => {
+    if (!user) return;
+    const flush = () => {
+      if (!saveTimer.current) return; // nothing pending — don't write on every tab switch
+      clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+      const payload = pendingRef.current;
+      pendingRef.current = null;
+      if (payload) void runSave(payload);
+    };
+    const onVisibility = () => { if (document.visibilityState === 'hidden') flush(); };
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('pagehide', flush);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('pagehide', flush);
+    };
+  }, [user, runSave]);
 
   const refreshLivePrices = useCallback(async (base: AppData) => {
     const tickers = [...new Set(base.providers.flatMap(p => p.holdings.map(h => h.ticker).filter(Boolean) as string[]))];
     setLivePricesLoading(true);
     try {
-      const [prices, rates, priceCcys] = await Promise.all([
-        tickers.length > 0 ? fetchLivePrices(tickers) : Promise.resolve(livePricesRef.current),
+      // One pass for price + currency + age; these used to be two identical walks
+      // of the stock list.
+      const [quotes, rates] = await Promise.all([
+        tickers.length > 0 ? fetchQuotes(tickers) : Promise.resolve({} as Record<string, Quote>),
         fetchFxRates(),
-        tickers.length > 0 ? fetchPriceCurrencies(tickers) : Promise.resolve(priceCurrenciesRef.current),
       ]);
+      const entries = Object.entries(quotes);
+      const prices = entries.length > 0
+        ? Object.fromEntries(entries.map(([t, q]) => [t, q.price]))
+        : livePricesRef.current;
+      const priceCcys = entries.length > 0
+        ? Object.fromEntries(entries.flatMap(([t, q]) => (q.currency ? [[t, q.currency] as const] : [])))
+        : priceCurrenciesRef.current;
+      const ages: PriceAges = entries.length > 0
+        ? Object.fromEntries(entries.map(([t, q]) => [t, q.asOf]))
+        : priceAgesRef.current;
+
       livePricesRef.current = prices;
       fxRatesRef.current = rates;
       priceCurrenciesRef.current = priceCcys;
+      priceAgesRef.current = ages;
       setLivePrices(prices);
+      setPriceAges(ages);
       setFxRates(rates);
-      const snapped = withTodaySnapshots(base, prices, rates);
+      const fresh = Object.values(ages).filter((a): a is number => a != null);
+      setNewestPriceAsOf(fresh.length > 0 ? Math.max(...fresh) : null);
+
+      const snapped = withTodaySnapshots(base, prices, rates, ages);
       if (snapped !== base) {
         baseData.current = snapped;
         scheduleSave(snapped);
       }
       setData(applyLivePrices(snapped, prices, rates, priceCcys));
+      setGbpData(gbpViewNow(snapped));
       setLivePricesUpdatedAt(new Date());
     } catch (err) {
       console.warn('Live price refresh failed:', err);
     } finally {
       setLivePricesLoading(false);
     }
-  }, [scheduleSave]);
+  }, [scheduleSave, gbpViewNow]);
 
   useEffect(() => {
     if (!dataReady) return;
-    refreshLivePrices(baseData.current);
-    const interval = setInterval(() => refreshLivePrices(baseData.current), 5 * 60 * 1000);
-    return () => clearInterval(interval);
+    const REFRESH_MS = 5 * 60 * 1000;
+    const lastRun = { at: 0 };
+    const run = () => { lastRun.at = Date.now(); refreshLivePrices(baseData.current); };
+
+    run();
+    const interval = setInterval(() => {
+      // A backgrounded PWA polling all night and all weekend costs real mobile data
+      // and Firestore reads for numbers nobody is looking at.
+      if (document.visibilityState !== 'visible') return;
+      run();
+    }, REFRESH_MS);
+
+    // Returning to a tab that has been away longer than the interval should show
+    // current prices, not whatever was on screen when it was last visible.
+    const onVisible = () => {
+      if (document.visibilityState === 'visible' && Date.now() - lastRun.at > REFRESH_MS) run();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, [dataReady, refreshLivePrices]);
 
   const handleChange = useCallback((next: AppData) => {
-    const snapped = withTodaySnapshots(next, livePricesRef.current, fxRatesRef.current);
+    const snapped = withTodaySnapshots(next, livePricesRef.current, fxRatesRef.current, priceAgesRef.current);
     baseData.current = snapped;
     setData(applyLivePrices(snapped, livePricesRef.current, fxRatesRef.current, priceCurrenciesRef.current));
+    setGbpData(gbpViewNow(snapped));
     scheduleSave(snapped);
-  }, [scheduleSave]);
+  }, [scheduleSave, gbpViewNow]);
 
   function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -240,6 +378,17 @@ export default function App() {
                         </span>
                       )}
 
+                      {/* Stale feed warning — the refresh time below is when WE last
+                          asked; this is when the feed itself last moved. */}
+                      {newestPriceAsOf != null && Date.now() - newestPriceAsOf > PRICE_WARN_AGE_MS && (
+                        <span
+                          className="text-xs text-amber-400"
+                          title={`Price feed last updated ${new Date(newestPriceAsOf).toLocaleString()}`}
+                        >
+                          Prices may be stale
+                        </span>
+                      )}
+
                       {/* Live prices */}
                       <button
                         onClick={() => refreshLivePrices(baseData.current)}
@@ -291,12 +440,28 @@ export default function App() {
                   </div>
                 )}
 
+                {conflict && (
+                  <div className="max-w-5xl mx-auto px-4 pt-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3 bg-red-900/30 border border-red-800/40 rounded-xl px-4 py-2.5">
+                      <span className="text-sm text-red-300">
+                        This portfolio was changed on another device — your edits here aren't being saved.
+                      </span>
+                      <button
+                        onClick={() => loadData(user)}
+                        className="text-sm font-medium text-red-200 border border-red-700/60 rounded-lg px-3 py-1 hover:bg-red-900/40 transition-colors"
+                      >
+                        Reload
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 <main className="max-w-5xl mx-auto px-4 py-6 pb-24 sm:pb-8" style={{paddingBottom: 'calc(6rem + env(safe-area-inset-bottom))'}}>
                   <Routes>
-                    <Route path="/" element={<ISATracker data={data} rawData={baseData.current} onChange={handleChange} livePrices={livePrices} fxRates={fxRates} />} />
+                    <Route path="/" element={<ISATracker data={data} rawData={baseData.current} onChange={handleChange} livePrices={livePrices} priceAges={priceAges} fxRates={fxRates} />} />
                     <Route path="/lookthrough" element={<LookThrough data={data} fundHoldings={fundHoldings} />} />
                     {isAdmin && <Route path="/funds" element={<FundManager fundHoldings={fundHoldings} onUpdateFundHoldings={handleUpdateFundHoldings} onDeleteFundHoldings={handleDeleteFundHoldings} />} />}
-                    <Route path="/fire" element={<FIRECalculator data={data} rawData={baseData.current} onChange={handleChange} />} />
+                    <Route path="/fire" element={<FIRECalculator data={gbpData} rawData={baseData.current} onChange={handleChange} />} />
                     <Route path="*" element={<Navigate to="/" replace />} />
                   </Routes>
                 </main>

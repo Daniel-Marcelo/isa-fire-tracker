@@ -45,11 +45,29 @@ export async function deleteFundHolding(fundTicker: string): Promise<void> {
 
 const TABLE = 'user_data';
 
-/** Load AppData from Supabase for the signed-in user. Returns null if no row yet. */
-export async function loadFromSupabase(): Promise<AppData | null> {
+export interface LoadedAppData {
+  data: AppData;
+  /** Optimistic-lock counter the data was read at. */
+  version: number;
+}
+
+/**
+ * Thrown when the remote row moved on since we loaded it — i.e. another device
+ * saved in between. The caller must stop writing and reload; auto-merging a blob
+ * whose arrays are keyed by generated uids would duplicate providers.
+ */
+export class ConflictError extends Error {
+  constructor() {
+    super('This portfolio was changed on another device');
+    this.name = 'ConflictError';
+  }
+}
+
+/** Load AppData + its version. Returns null if no row yet. */
+export async function loadFromSupabase(): Promise<LoadedAppData | null> {
   const { data, error } = await supabase
     .from(TABLE)
-    .select('data')
+    .select('data, version')
     .single();
 
   if (error) {
@@ -57,13 +75,22 @@ export async function loadFromSupabase(): Promise<AppData | null> {
     throw error;
   }
 
-  return migrateAppData(data.data as AppData);
+  return {
+    data: migrateAppData(data.data as AppData),
+    version: Number(data.version ?? 1),
+  };
 }
 
-/** Upsert AppData to Supabase for the signed-in user. */
-export async function saveToSupabase(appData: AppData): Promise<void> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return;
+/**
+ * Write AppData, refusing to clobber a row that changed since `expectedVersion`.
+ * Pass null when the user has no row yet (first ever save). Returns the new version.
+ */
+export async function saveToSupabase(appData: AppData, expectedVersion: number | null): Promise<number> {
+  // getSession() reads the local session; getUser() would be a network round trip
+  // on every single save.
+  const { data: { session } } = await supabase.auth.getSession();
+  const user = session?.user;
+  if (!user) throw new Error('Not signed in');
 
   const cleaned: AppData = {
     ...appData,
@@ -73,9 +100,31 @@ export async function saveToSupabase(appData: AppData): Promise<void> {
     })),
   };
 
-  const { error } = await supabase
+  if (expectedVersion === null) {
+    const { data, error } = await supabase
+      .from(TABLE)
+      .insert({ user_id: user.id, data: cleaned, version: 1, updated_at: new Date().toISOString() })
+      .select('version')
+      .single();
+    // 23505 = unique violation: a row appeared between our load and this insert.
+    if (error) throw error.code === '23505' ? new ConflictError() : error;
+    return Number(data.version);
+  }
+
+  const { data, error } = await supabase
     .from(TABLE)
-    .upsert({ user_id: user.id, data: cleaned, updated_at: new Date().toISOString() });
+    .update({
+      data: cleaned,
+      version: expectedVersion + 1,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('user_id', user.id)
+    .eq('version', expectedVersion)
+    .select('version');
 
   if (error) throw error;
+  // Zero rows means the version guard matched nothing (or RLS denied) — either way
+  // someone else owns the current state and we must not overwrite it.
+  if (!data || data.length === 0) throw new ConflictError();
+  return Number(data[0].version);
 }

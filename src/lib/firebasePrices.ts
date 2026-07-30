@@ -1,5 +1,14 @@
 const PROJECT_ID = 'nw-scrape';
 const FIRESTORE_BASE = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
+const DOC_PREFIX = `projects/${PROJECT_ID}/databases/(default)/documents/stocks`;
+
+// The only fields this app reads. Each doc also carries a large `meta` map
+// (52-week ranges, trading-period calendars, pre/post-market blocks) that we never
+// touch; masking it out is what takes the list response from ~1.5 MB to a fraction.
+const FIELD_PATHS = ['symbol', 'name', 'latestPrice', 'currency', 'lastUpdated'];
+
+// Firestore caps the documents per :batchGet request.
+const BATCH_LIMIT = 100;
 
 function extractNumber(field: unknown): number | null {
   if (!field || typeof field !== 'object') return null;
@@ -16,6 +25,26 @@ function extractString(field: unknown): string | null {
   return null;
 }
 
+/** Firestore timestampValue (RFC 3339) → epoch ms, or null if absent/unparseable. */
+function extractTimestamp(field: unknown): number | null {
+  if (!field || typeof field !== 'object') return null;
+  const f = field as Record<string, unknown>;
+  if (!('timestampValue' in f)) return null;
+  const ms = Date.parse(String(f.timestampValue));
+  // Never let NaN through: `now - NaN > threshold` is false, so a bad timestamp
+  // would silently read as fresh.
+  return Number.isNaN(ms) ? null : ms;
+}
+
+/** Older than this and the UI warns, but still shows the price. */
+export const PRICE_WARN_AGE_MS = 24 * 60 * 60 * 1000;
+/**
+ * Older than this and the price must not be written into snapshot history.
+ * Sized to survive a normal weekend: on a Sunday the newest legitimate LSE
+ * price is ~48h old, and false alarms every weekend would train us to ignore it.
+ */
+export const PRICE_SNAPSHOT_MAX_AGE_MS = 48 * 60 * 60 * 1000;
+
 // The feed prices LSE stocks in pence (currency "GBp" or "GBX"). Normalise to pounds
 // so every price leaving this module is in a major-unit ISO currency.
 function normalisePence(price: number | undefined, currency: string | undefined): { price: number | undefined; currency: string | undefined } {
@@ -29,6 +58,8 @@ export interface TickerInfo {
   price: number;
   name?: string;
   currency?: string;
+  /** Epoch ms the feed last refreshed this symbol; null when the feed omits it. */
+  asOf?: number | null;
 }
 
 export interface StockResult {
@@ -36,6 +67,14 @@ export interface StockResult {
   name: string;
   price?: number;
   currency?: string;
+  asOf?: number | null;
+}
+
+/** A price with everything needed to decide whether to trust it. */
+export interface Quote {
+  price: number;
+  currency?: string;
+  asOf: number | null;
 }
 
 // Cache the full stock list so we don't refetch on every call, but refresh periodically
@@ -54,6 +93,7 @@ function mapDoc(doc: Record<string, unknown>): StockResult {
     name: extractString(fields?.name) ?? '',
     price,
     currency,
+    asOf: extractTimestamp(fields?.lastUpdated),
   };
 }
 
@@ -71,6 +111,7 @@ async function getAllStocks(): Promise<StockResult[]> {
   for (let page = 0; page < 20; page++) {
     const url = new URL(`${FIRESTORE_BASE}/stocks`);
     url.searchParams.set('pageSize', '300');
+    for (const f of FIELD_PATHS) url.searchParams.append('mask.fieldPaths', f);
     if (pageToken) url.searchParams.set('pageToken', pageToken);
     const res = await fetch(url.toString());
     if (!res.ok) break; // keep whatever we've gathered so far
@@ -95,50 +136,97 @@ export async function searchStocks(query: string): Promise<StockResult[]> {
     .slice(0, 8);
 }
 
-export async function fetchLivePrices(tickers: string[]): Promise<Record<string, number>> {
+/**
+ * Fetch exactly the documents asked for, keyed by upper-cased symbol.
+ * Firestore doc ids are case-sensitive, so a ticker stored in the wrong case comes
+ * back `missing` here — the caller falls back to the case-insensitive list scan.
+ */
+async function batchGetDocs(ids: string[]): Promise<Map<string, StockResult>> {
+  const out = new Map<string, StockResult>();
+  for (let i = 0; i < ids.length; i += BATCH_LIMIT) {
+    const chunk = ids.slice(i, i + BATCH_LIMIT);
+    let res: Response;
+    try {
+      res = await fetch(`${FIRESTORE_BASE}:batchGet`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          documents: chunk.map(id => `${DOC_PREFIX}/${id}`),
+          mask: { fieldPaths: FIELD_PATHS },
+        }),
+      });
+    } catch {
+      continue; // network error — let the list fallback try
+    }
+    if (!res.ok) continue;
+    const rows = await res.json();
+    if (!Array.isArray(rows)) continue;
+    for (const row of rows) {
+      // Each row is { found: {name, fields} } or { missing: "<path>" }.
+      if (!row?.found) continue;
+      const mapped = mapDoc(row.found);
+      if (mapped.symbol) out.set(mapped.symbol.toUpperCase(), mapped);
+    }
+  }
+  return out;
+}
+
+/**
+ * Price + currency + age for each ticker. This is the primary entry point;
+ * fetchLivePrices/fetchPriceCurrencies below are thin derivations of it.
+ *
+ * Resolution order, cheapest first:
+ *   1. :batchGet — only the documents held (a few KB)
+ *   2. the full list — case-insensitive safety net, and warms the search cache
+ *   3. the single-doc endpoint — last resort per still-unresolved ticker
+ *
+ * Step 1 is what keeps a routine refresh off the ~1.5 MB full-collection scan
+ * this used to do every four minutes.
+ */
+export async function fetchQuotes(tickers: string[]): Promise<Record<string, Quote>> {
   if (tickers.length === 0) return {};
-  const all = await getAllStocks();
-  const bySymbol = new Map(all.map(s => [s.symbol.toUpperCase(), s.price]));
-  const results: Record<string, number> = {};
-  const missing: string[] = [];
-  for (const ticker of tickers) {
-    const price = bySymbol.get(ticker.toUpperCase());
-    if (price != null && price > 0) results[ticker] = price;
-    else missing.push(ticker);
-  }
+
+  const out: Record<string, Quote> = {};
+  const take = (ticker: string, hit: StockResult | undefined): boolean => {
+    if (hit?.price == null || hit.price <= 0) return false;
+    out[ticker] = { price: hit.price, currency: hit.currency, asOf: hit.asOf ?? null };
+    return true;
+  };
+
+  const batched = await batchGetDocs(tickers);
+  const missing = tickers.filter(t => !take(t, batched.get(t.toUpperCase())));
+
   if (missing.length > 0) {
-    // The cached list page(s) may still be missing a ticker (universe grew, or it's
-    // simply not on the current page); fall back to the precise single-doc endpoint.
-    // Pass the original-case ticker — the doc id is case-sensitive Firestore data,
-    // not necessarily the upper-cased lookup key.
-    const infos = await Promise.all(missing.map(t => fetchTickerInfo(t).catch(() => null)));
-    missing.forEach((t, i) => {
-      const p = infos[i]?.price;
-      if (p != null && p > 0) results[t] = p;
-    });
+    // Case mismatch, or a symbol whose doc id differs from its `symbol` field.
+    const all = await getAllStocks();
+    const bySymbol = new Map(all.map(s => [s.symbol.toUpperCase(), s]));
+    const stillMissing = missing.filter(t => !take(t, bySymbol.get(t.toUpperCase())));
+
+    if (stillMissing.length > 0) {
+      // Pass the original-case ticker — the doc id is case-sensitive Firestore
+      // data, not necessarily the upper-cased lookup key.
+      const infos = await Promise.all(stillMissing.map(t => fetchTickerInfo(t).catch(() => null)));
+      stillMissing.forEach((t, i) => {
+        const info = infos[i];
+        if (info?.price != null && info.price > 0) {
+          out[t] = { price: info.price, currency: info.currency, asOf: info.asOf ?? null };
+        }
+      });
+    }
   }
-  return results;
+  return out;
+}
+
+export async function fetchLivePrices(tickers: string[]): Promise<Record<string, number>> {
+  const quotes = await fetchQuotes(tickers);
+  return Object.fromEntries(Object.entries(quotes).map(([t, q]) => [t, q.price]));
 }
 
 export async function fetchPriceCurrencies(tickers: string[]): Promise<Record<string, string>> {
-  if (tickers.length === 0) return {};
-  const all = await getAllStocks();
-  const bySymbol = new Map(all.map(s => [s.symbol.toUpperCase(), s.currency]));
-  const out: Record<string, string> = {};
-  const missing: string[] = [];
-  for (const t of tickers) {
-    const c = bySymbol.get(t.toUpperCase());
-    if (c) out[t] = c;
-    else missing.push(t);
-  }
-  if (missing.length > 0) {
-    const infos = await Promise.all(missing.map(t => fetchTickerInfo(t).catch(() => null)));
-    missing.forEach((t, i) => {
-      const c = infos[i]?.currency;
-      if (c) out[t] = c;
-    });
-  }
-  return out;
+  const quotes = await fetchQuotes(tickers);
+  return Object.fromEntries(
+    Object.entries(quotes).flatMap(([t, q]) => (q.currency ? [[t, q.currency] as const] : [])),
+  );
 }
 
 export async function fetchTickerInfo(ticker: string): Promise<TickerInfo | null> {
@@ -153,5 +241,6 @@ export async function fetchTickerInfo(ticker: string): Promise<TickerInfo | null
     price: price as number,
     name: extractString(doc?.fields?.name) ?? undefined,
     currency,
+    asOf: extractTimestamp(doc?.fields?.lastUpdated),
   };
 }

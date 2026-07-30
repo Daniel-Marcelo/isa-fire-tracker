@@ -1,10 +1,10 @@
-import React, { useState, useMemo, useRef, useEffect, useDeferredValue } from 'react';
+import React, { useState, useMemo, useRef, useEffect, useCallback, useDeferredValue } from 'react';
 import {
   AreaChart, Area, ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ReferenceLine, ResponsiveContainer, Legend,
 } from 'recharts';
 import type { AppData, FireSettings } from '../types';
-import { useCurrency } from '../contexts/CurrencyContext';
+import { formatCurrency, formatCurrencyShort } from '../utils';
 import { project } from '../lib/fireProjection';
 import { planToAgeOf, targetConfidenceOf } from '../lib/fireEngine';
 import { runFireCalc, type FireCalcRequest, type FireCalcResult } from '../lib/fireCalc';
@@ -67,7 +67,11 @@ function ContributionDeltaChip({ current, required, fmt }: { current: number; re
 
 export default function FIRECalculator({ data, rawData, onChange }: Props) {
   const s = data.fireSettings;
-  const { fmt, fmtShort } = useCurrency();
+  // This tab is GBP-only. Every input on it — spending, contributions, state
+  // pension, drawdown tax — is inherently sterling, and `data` is the GBP view.
+  // The £ prefixes throughout this file are correct, not hardcoded oversights.
+  const fmt = useCallback((v: number) => formatCurrency(v, 'GBP'), []);
+  const fmtShort = useCallback((v: number) => formatCurrencyShort(v, 'GBP'), []);
   const [activeTab, setActiveTab] = useState<'split' | 'combined'>('split');
 
   // Write through rawData, never data: data's holdings carry display-converted
@@ -380,7 +384,10 @@ export default function FIRECalculator({ data, rawData, onChange }: Props) {
     <div className="space-y-4">
       {/* Assumptions */}
       <div className="bg-slate-800/70 rounded-xl border border-slate-700/50 p-5">
-        <h3 className="font-semibold text-slate-100 mb-4">Assumptions</h3>
+        <h3 className="font-semibold text-slate-100 mb-4">
+          Assumptions
+          <span className="ml-2 text-xs font-normal text-slate-500">All FIRE figures in GBP</span>
+        </h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <NumberInput label="Current age" value={s.currentAge} min={18} max={80} onChange={v => update({ currentAge: v })} />
           <NumberInput label="Expected annual return (%/yr)" value={s.expectedAnnualReturn} min={0} max={30} step={0.5} onChange={v => update({ expectedAnnualReturn: v })} suffix="%" hint={`Nominal return (e.g. 7%). Real return ≈ ${(s.expectedAnnualReturn - s.inflationRate).toFixed(1)}%`} />

@@ -160,12 +160,16 @@ describe('solveEarliestFireAge', () => {
     expect(ageOrInf(short)).toBeLessThanOrEqual(ageOrInf(long));
   });
 
+  // Four full solver runs (two binary searches + two success curves) is ~5s of real
+  // computation — right on vitest's 5000ms default, so it fails intermittently
+  // whenever the suite runs files in parallel. The budget, not the assertion, is
+  // what needed relaxing.
   it('is deterministic: the same seed gives an identical solved age and curve', () => {
     const s = makeSettings({ returnVolatility: 12 });
     const acc = 300_000, pen = 150_000;
     expect(solveEarliestFireAge(s, acc, pen)).toBe(solveEarliestFireAge(s, acc, pen));
     expect(successCurve(s, acc, pen)).toEqual(successCurve(s, acc, pen));
-  });
+  }, 30_000);
 });
 
 describe('solveRequiredContribution', () => {

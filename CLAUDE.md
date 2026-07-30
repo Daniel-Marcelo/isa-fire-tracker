@@ -45,6 +45,18 @@ npm run lint
 | `src/components/ISATracker.tsx` | Holdings tab |
 | `src/components/LookThrough.tsx` | Fund look-through (underlying holdings exposure) |
 
+## UI house style
+
+Dark-only fintech dashboard — there is no light mode (`color-scheme: dark`; body is slate-950, set in `index.css`).
+
+- **Type:** Space Grotesk body, Archivo headings (Google Fonts import in `index.css`)
+- **Surfaces:** slate-800/900 cards on the slate-950 body, slate-700 borders
+- **Text ramp:** slate-100 headings → slate-300/400 body → slate-500/600 muted
+- **Primary:** indigo-600 buttons, indigo-400 emphasised text
+- **Semantic colours — don't repurpose:** green-400 = gains, red-400 = losses; never use them decoratively
+- **Charts:** Recharts, styled to this same palette
+- New UI extends this system; don't introduce new hues or fonts without asking
+
 ## Environment
 
 `.env.local` (also set in Vercel): `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_ADMIN_EMAIL`.

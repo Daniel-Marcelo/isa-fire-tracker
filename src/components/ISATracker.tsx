@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Plus, Pencil, Trash2, ChevronDown, ChevronRight, TrendingUp, TrendingDown, Upload } from 'lucide-react';
 import type { AppData, Provider, Holding, AccountType } from '../types';
-import { fetchTickerInfo, searchStocks } from '../lib/firebasePrices';
+import { fetchTickerInfo, searchStocks, PRICE_WARN_AGE_MS } from '../lib/firebasePrices';
+import type { PriceAges } from '../lib/snapshots';
 import { uid, PROVIDER_COLORS, getCurrencySymbol, isPensionType, isCashType, SUPPORTED_CURRENCIES } from '../utils';
 import { useCurrency } from '../contexts/CurrencyContext';
 import { convertAmount, type FxRates } from '../lib/fxRates';
@@ -27,10 +28,11 @@ interface Props {
   rawData: AppData;
   onChange: (data: AppData) => void;
   livePrices?: Record<string, number>;
+  priceAges?: PriceAges;
   fxRates?: FxRates;
 }
 
-export default function ISATracker({ data, rawData, onChange, livePrices = {}, fxRates = {} }: Props) {
+export default function ISATracker({ data, rawData, onChange, livePrices = {}, priceAges = {}, fxRates = {} }: Props) {
   const [showAddProvider, setShowAddProvider] = useState(false);
   const [editProvider, setEditProvider] = useState<Provider | null>(null);
   const [expandedProviders, setExpandedProviders] = useState<Set<string>>(new Set());
@@ -39,6 +41,7 @@ export default function ISATracker({ data, rawData, onChange, livePrices = {}, f
   const [filterOwner, setFilterOwner] = useState<string>('All');
   const [filterType, setFilterType] = useState<string>('All');
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [confirmDeleteHolding, setConfirmDeleteHolding] = useState<{ providerId: string; holding: Holding } | null>(null);
   const [showCSVImport, setShowCSVImport] = useState(false);
   const { fmt, fmtShort, currency: userCurrency } = useCurrency();
 
@@ -178,13 +181,19 @@ const owners = ['All', ...OWNERS] as const;
     });
   }
 
-  function deleteHolding(providerId: string, holdingId: string) {
+  function deleteHolding(providerId: string, holding: Holding) {
+    setConfirmDeleteHolding({ providerId, holding });
+  }
+
+  function confirmDeleteHoldingAction() {
+    if (!confirmDeleteHolding) return;
+    const { providerId, holding } = confirmDeleteHolding;
     vibrate([50]);
     onChange({
       ...rawData,
       providers: rawData.providers.map(p =>
         p.id === providerId
-          ? { ...p, holdings: p.holdings.filter(h => h.id !== holdingId) }
+          ? { ...p, holdings: p.holdings.filter(h => h.id !== holding.id) }
           : p
       ),
     });
@@ -492,7 +501,7 @@ const owners = ['All', ...OWNERS] as const;
                                 )}
                                 <div className="flex items-center justify-end gap-1 mt-1.5">
                                   <button onClick={() => { const raw = rawData.providers.find(p2 => p2.id === provider.id)?.holdings.find(rh => rh.id === h.id); if (raw) setEditHolding({ providerId: provider.id, holding: raw }); }} className="p-1 text-slate-600 hover:text-indigo-400 transition-colors"><Pencil size={13} /></button>
-                                  <button onClick={() => deleteHolding(provider.id, h.id)} className="p-1 text-slate-600 hover:text-red-400 transition-colors"><Trash2 size={13} /></button>
+                                  <button onClick={() => deleteHolding(provider.id, h)} className="p-1 text-slate-600 hover:text-red-400 transition-colors"><Trash2 size={13} /></button>
                                 </div>
                               </div>
                             </div>
@@ -558,7 +567,7 @@ const owners = ['All', ...OWNERS] as const;
                                   <td className="py-2.5 text-right">
                                     <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                       <button onClick={() => { const raw = rawData.providers.find(p2 => p2.id === provider.id)?.holdings.find(rh => rh.id === h.id); if (raw) setEditHolding({ providerId: provider.id, holding: raw }); }} className="p-1 text-slate-600 hover:text-indigo-400 transition-colors"><Pencil size={13} /></button>
-                                      <button onClick={() => deleteHolding(provider.id, h.id)} className="p-1 text-slate-600 hover:text-red-400 transition-colors"><Trash2 size={13} /></button>
+                                      <button onClick={() => deleteHolding(provider.id, h)} className="p-1 text-slate-600 hover:text-red-400 transition-colors"><Trash2 size={13} /></button>
                                     </div>
                                   </td>
                                 </tr>
@@ -633,6 +642,17 @@ const owners = ['All', ...OWNERS] as const;
         />
       )}
 
+      {confirmDeleteHolding && (
+        <ConfirmModal
+          title="Delete holding"
+          message={`Delete ${confirmDeleteHolding.holding.name}? This cannot be undone.`}
+          confirmLabel="Delete"
+          variant="danger"
+          onConfirm={confirmDeleteHoldingAction}
+          onClose={() => setConfirmDeleteHolding(null)}
+        />
+      )}
+
       {/* CSV Import Modal */}
       {showCSVImport && (
         <CSVImportModal
@@ -659,6 +679,7 @@ const owners = ['All', ...OWNERS] as const;
           onSave={form => saveHolding(showAddHolding, form)}
           onClose={() => setShowAddHolding(null)}
           livePrices={livePrices}
+          priceAges={priceAges}
         />
       )}
       {editHolding && (
@@ -668,6 +689,7 @@ const owners = ['All', ...OWNERS] as const;
           onSave={form => saveHolding(editHolding.providerId, form, editHolding.holding)}
           onClose={() => setEditHolding(null)}
           livePrices={livePrices}
+          priceAges={priceAges}
         />
       )}
     </div>
@@ -756,12 +778,13 @@ function ProviderModal({ existing, usedColors, onSave, onClose }: {
   );
 }
 
-function HoldingModal({ existing, cashAccount = false, onSave, onClose, livePrices = {} }: {
+function HoldingModal({ existing, cashAccount = false, onSave, onClose, livePrices = {}, priceAges = {} }: {
   existing?: Holding;
   cashAccount?: boolean;
   onSave: (form: Omit<Holding, 'id'>) => void;
   onClose: () => void;
   livePrices?: Record<string, number>;
+  priceAges?: PriceAges;
 }) {
   const [name, setName] = useState(existing?.name ?? '');
   const [ticker, setTicker] = useState(existing?.ticker ?? '');
@@ -785,6 +808,13 @@ function HoldingModal({ existing, cashAccount = false, onSave, onClose, livePric
   const [fetchedPrice, setFetchedPrice] = useState<number | undefined>(
     existing?.ticker ? livePrices[existing.ticker] : undefined
   );
+  const [fetchedAsOf, setFetchedAsOf] = useState<number | null>(
+    existing?.ticker ? priceAges[existing.ticker] ?? null : null
+  );
+  // Freshness is evaluated when a price is resolved, not during render: Date.now()
+  // in a render body is impure (the React compiler rejects it) and would also make
+  // the badge flip on unrelated re-renders.
+  const [priceIsFresh, setPriceIsFresh] = useState(false);
   const [fetchingPrice, setFetchingPrice] = useState(false);
 
   useEffect(() => {
@@ -799,16 +829,31 @@ function HoldingModal({ existing, cashAccount = false, onSave, onClose, livePric
     return () => clearTimeout(timer);
   }, [searchQuery, stockSelected, cashAccount]);
 
+  // Resolve this ticker's price/age during render so the effect below depends on
+  // primitives, not on the identity of the livePrices/priceAges maps (which would
+  // re-run the fetch on every parent render).
+  const tickerKey = ticker.trim().toUpperCase();
+  const livePriceForTicker = tickerKey ? livePrices[tickerKey] : undefined;
+  const liveAsOfForTicker = tickerKey ? priceAges[tickerKey] ?? null : null;
+
   useEffect(() => {
-    const t = ticker.trim().toUpperCase();
-    if (!t || cashAccount) { setFetchedPrice(undefined); return; }
-    if (livePrices[t] !== undefined) { setFetchedPrice(livePrices[t]); return; }
+    const applyAsOf = (asOf: number | null) => {
+      setFetchedAsOf(asOf);
+      setPriceIsFresh(asOf != null && Date.now() - asOf <= PRICE_WARN_AGE_MS);
+    };
+    if (!tickerKey || cashAccount) { setFetchedPrice(undefined); applyAsOf(null); return; }
+    if (livePriceForTicker !== undefined) {
+      setFetchedPrice(livePriceForTicker);
+      applyAsOf(liveAsOfForTicker);
+      return;
+    }
     const timer = setTimeout(async () => {
       setFetchingPrice(true);
       try {
-        const info = await fetchTickerInfo(t);
+        const info = await fetchTickerInfo(tickerKey);
         if (info) {
           setFetchedPrice(info.price);
+          applyAsOf(info.asOf ?? null);
           if (info.currency) setNativeCurrency(info.currency === 'GBp' ? 'GBP' : info.currency);
         }
       } finally {
@@ -816,7 +861,7 @@ function HoldingModal({ existing, cashAccount = false, onSave, onClose, livePric
       }
     }, 500);
     return () => clearTimeout(timer);
-  }, [ticker, livePrices, cashAccount]);
+  }, [tickerKey, livePriceForTicker, liveAsOfForTicker, cashAccount]);
 
   function selectStock(stock: import('../lib/firebasePrices').StockResult) {
     setName(stock.name);
@@ -919,7 +964,12 @@ function HoldingModal({ existing, cashAccount = false, onSave, onClose, livePric
               <span className="text-xs text-slate-600 font-normal bg-slate-700 rounded-full px-2 py-0.5">{nativeCurrency}</span>
               {fetchingPrice && <span className="text-xs text-slate-500 animate-pulse">fetching…</span>}
               {!fetchingPrice && livePrice != null && (
-                <span className="text-xs font-medium text-green-400 bg-green-900/20 border border-green-800/40 rounded-full px-2 py-0.5">live</span>
+                priceIsFresh
+                  ? <span className="text-xs font-medium text-green-400 bg-green-900/20 border border-green-800/40 rounded-full px-2 py-0.5">live</span>
+                  : <span
+                      className="text-xs font-medium text-amber-400 bg-amber-900/20 border border-amber-800/40 rounded-full px-2 py-0.5"
+                      title={fetchedAsOf != null ? `Feed last updated ${new Date(fetchedAsOf).toLocaleString()}` : 'The feed did not date this price'}
+                    >stale</span>
               )}
             </label>
             <input
@@ -930,7 +980,13 @@ function HoldingModal({ existing, cashAccount = false, onSave, onClose, livePric
               disabled={livePrice != null}
               onChange={e => setCurrentPrice(e.target.value)}
             />
-            {livePrice != null && <p className="text-xs text-green-400/70 mt-1">Live price from Firebase</p>}
+            {livePrice != null && (
+              priceIsFresh
+                ? <p className="text-xs text-green-400/70 mt-1">Live price from Firebase</p>
+                : <p className="text-xs text-amber-400/70 mt-1">
+                    Last known price{fetchedAsOf != null ? ` from ${new Date(fetchedAsOf).toLocaleString()}` : ''} — the feed may have stopped
+                  </p>
+            )}
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-400 mb-1.5">Current value ({sym}) *</label>

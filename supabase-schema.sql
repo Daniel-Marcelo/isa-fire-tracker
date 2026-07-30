@@ -6,6 +6,13 @@ create table if not exists public.user_data (
   updated_at timestamptz not null default now()
 );
 
+-- Optimistic-lock counter. The client loads it with the data and writes with
+-- `where version = <loaded>`; a zero-row update means another device saved first,
+-- so the write is refused instead of clobbering it. Guarding on a bigint avoids
+-- the precision/encoding pitfalls of matching a timestamptz in a filter.
+alter table public.user_data
+  add column if not exists version bigint not null default 1;
+
 -- Only the owner can read/write their own row
 alter table public.user_data enable row level security;
 
