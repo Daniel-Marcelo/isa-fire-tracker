@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import type { Provider } from '../types';
 import { useCurrency } from '../contexts/CurrencyContext';
 import { convertAmount, type FxRates } from '../lib/fxRates';
@@ -11,6 +11,19 @@ interface Props {
 
 export default function PerformanceChart({ providers, fxRates = {} }: Props) {
   const { fmtShort, currency } = useCurrency();
+
+  // Several providers can share a name (e.g. four separate Vanguard accounts), which
+  // makes a name-only legend useless. Qualify duplicates with owner + account type.
+  const labels = useMemo(() => {
+    const counts = new Map<string, number>();
+    providers.forEach(p => counts.set(p.name, (counts.get(p.name) ?? 0) + 1));
+    return new Map(providers.map(p => {
+      if ((counts.get(p.name) ?? 0) < 2) return [p.id, p.name] as const;
+      const qualifier = [p.owner, p.accountType].filter(Boolean).join(' ');
+      return [p.id, qualifier ? `${p.name} · ${qualifier}` : p.name] as const;
+    }));
+  }, [providers]);
+
   const data = useMemo(() => {
     // Collect all unique dates across all providers
     const dateSet = new Set<string>();
@@ -49,14 +62,32 @@ export default function PerformanceChart({ providers, fxRates = {} }: Props) {
             formatter={(v) => fmtShort(Number(v))}
             contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: '10px', color: '#f8fafc', fontSize: 12 }}
             labelStyle={{ color: '#94a3b8' }}
+            itemStyle={{ padding: 0 }}
           />
-          <Legend />
           <Line dataKey="Total" stroke="#6366f1" strokeWidth={2} dot={false} />
           {providers.map(p => (
-            <Line key={p.id} dataKey={p.id} name={p.name} stroke={p.color} strokeWidth={1.5} dot={false} strokeDasharray="4 2" />
+            <Line key={p.id} dataKey={p.id} name={labels.get(p.id)} stroke={p.color} strokeWidth={1.5} dot={false} strokeDasharray="4 2" />
           ))}
         </LineChart>
       </ResponsiveContainer>
+
+      {/* Custom legend: Recharts' built-in one renders at inherited font size and
+          overflows the card once there are more than a handful of providers. */}
+      <ul className="mt-3 flex flex-wrap gap-x-3 gap-y-1.5 text-[11px] leading-tight text-slate-400">
+        <LegendItem color="#6366f1" label="Total" />
+        {providers.map(p => (
+          <LegendItem key={p.id} color={p.color} label={labels.get(p.id) ?? p.name} />
+        ))}
+      </ul>
     </div>
+  );
+}
+
+function LegendItem({ color, label }: { color: string; label: string }) {
+  return (
+    <li className="flex items-center gap-1.5 min-w-0">
+      <span className="h-0.5 w-3 shrink-0 rounded-full" style={{ background: color }} />
+      <span className="truncate">{label}</span>
+    </li>
   );
 }

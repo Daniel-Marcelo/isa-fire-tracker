@@ -317,23 +317,23 @@ const owners = ['All', ...OWNERS] as const;
       {/* Filters */}
       {data.providers.length > 0 && (
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-600 font-medium uppercase tracking-wide">Owner</span>
-            <div className="flex gap-1">
+          <div className="flex items-start gap-2 min-w-0">
+            <span className="text-xs text-slate-600 font-medium uppercase tracking-wide shrink-0 py-1">Owner</span>
+            <div className="flex flex-wrap gap-1 min-w-0">
               {owners.map(o => (
                 <button key={o} onClick={() => setFilterOwner(o)}
-                  className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${filterOwner === o ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-slate-200 border border-slate-700'}`}>
+                  className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${filterOwner === o ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-slate-200 border border-slate-700'}`}>
                   {o}
                 </button>
               ))}
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-600 font-medium uppercase tracking-wide">Type</span>
-            <div className="flex gap-1">
+          <div className="flex items-start gap-2 min-w-0">
+            <span className="text-xs text-slate-600 font-medium uppercase tracking-wide shrink-0 py-1">Type</span>
+            <div className="flex flex-wrap gap-1 min-w-0">
               {accountTypes.map(t => (
                 <button key={t} onClick={() => setFilterType(t)}
-                  className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${filterType === t ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-slate-200 border border-slate-700'}`}>
+                  className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${filterType === t ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-slate-200 border border-slate-700'}`}>
                   {t}
                 </button>
               ))}
