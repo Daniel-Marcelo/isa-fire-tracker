@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
-import { Routes, Route, Navigate, NavLink, useLocation } from 'react-router-dom';
+import { Routes, Route, Navigate, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { BarChart3, Flame, Download, Upload, Layers, LogOut, Cloud, CloudOff, RefreshCw, FolderOpen, Settings } from 'lucide-react';
 import type { User } from '@supabase/supabase-js';
 import type { AppData, UploadedFundHoldings } from './types';
@@ -21,6 +21,9 @@ import FIRECalculator from './components/FIRECalculator';
 import LookThrough from './components/LookThrough';
 import FundManager from './components/FundManager';
 import AuthScreen from './components/AuthScreen';
+import Home from './components/Home';
+import FormScreen from './components/FormScreen';
+import AllowanceCard from './components/AllowanceCard';
 import { isFormRoute } from './lib/formRoute';
 import { AlertModal } from './components/Modal';
 import './index.css';
@@ -468,14 +471,6 @@ function Shell({
                     {syncState === 'error' && <><CloudOff size={13} className="text-red-400" /><span className="text-red-400 hidden sm:inline">Sync error</span></>}
                   </span>
                 )}
-                {newestPriceAsOf != null && Date.now() - newestPriceAsOf > PRICE_WARN_AGE_MS && (
-                  <span
-                    className="text-xs text-amber-400"
-                    title={`Price feed last updated ${new Date(newestPriceAsOf).toLocaleString()}`}
-                  >
-                    Prices may be stale
-                  </span>
-                )}
                 <button
                   onClick={() => refreshLivePrices(baseData.current)}
                   disabled={livePricesLoading}
@@ -547,8 +542,23 @@ function Shell({
           style={formScreen ? undefined : {paddingBottom: 'calc(6rem + env(safe-area-inset-bottom))'}}
         >
           <Routes>
-            <Route path="/" element={<ISATracker data={data} rawData={baseData.current} onChange={handleChange} livePrices={livePrices} priceAges={priceAges} fxRates={fxRates} />} />
+            <Route
+              path="/"
+              element={
+                <Home
+                  data={data}
+                  pricesUpdatedAt={livePricesUpdatedAt}
+                  pricesStale={newestPriceAsOf != null && Date.now() - newestPriceAsOf > PRICE_WARN_AGE_MS}
+                  fmt={currencyContextValue.fmt}
+                  fmtShort={currencyContextValue.fmtShort}
+                />
+              }
+            />
             <Route path="/holdings/*" element={<ISATracker data={data} rawData={baseData.current} onChange={handleChange} livePrices={livePrices} priceAges={priceAges} fxRates={fxRates} />} />
+            <Route
+              path="/allowance"
+              element={<AllowanceRoute rawData={baseData.current} onChange={handleChange} />}
+            />
             <Route path="/lookthrough" element={<LookThrough data={data} fundHoldings={fundHoldings} />} />
             {isAdmin && <Route path="/funds" element={<FundManager fundHoldings={fundHoldings} onUpdateFundHoldings={handleUpdateFundHoldings} onDeleteFundHoldings={handleDeleteFundHoldings} />} />}
             <Route path="/fire/*" element={<FIRECalculator data={gbpData} rawData={baseData.current} onChange={handleChange} />} />
@@ -557,6 +567,15 @@ function Shell({
         </main>
       </div>
     </CurrencyContext.Provider>
+  );
+}
+
+function AllowanceRoute({ rawData, onChange }: { rawData: AppData; onChange: (data: AppData) => void }) {
+  const navigate = useNavigate();
+  return (
+    <FormScreen title="ISA allowance" onCancel={() => navigate('/')} onCommit={() => navigate('/')} commitLabel="Save">
+      <AllowanceCard rawData={rawData} onChange={onChange} />
+    </FormScreen>
   );
 }
 
