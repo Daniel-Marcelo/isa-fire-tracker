@@ -510,7 +510,7 @@ function Shell({
           </nav>
         )}
 
-        {!formScreen && degraded && (
+        {degraded && (
           <div className="max-w-5xl mx-auto px-4 pt-4">
             <div className="flex flex-wrap items-center justify-between gap-3 bg-amber-900/30 border border-amber-800/40 rounded-xl px-4 py-2.5">
               <span className="text-sm text-amber-300">
@@ -526,7 +526,7 @@ function Shell({
           </div>
         )}
 
-        {!formScreen && conflict && (
+        {conflict && (
           <div className="max-w-5xl mx-auto px-4 pt-4">
             <div className="flex flex-wrap items-center justify-between gap-3 bg-red-900/30 border border-red-800/40 rounded-xl px-4 py-2.5">
               <span className="text-sm text-red-300">
