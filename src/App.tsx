@@ -24,12 +24,11 @@ import FundManager from './components/FundManager';
 import AuthScreen from './components/AuthScreen';
 import Home from './components/Home';
 import HoldingsList from './components/HoldingsList';
-import FormScreen from './components/FormScreen';
 import AccountScreen from './components/AccountScreen';
 import AccountForm from './components/AccountForm';
 import HoldingForm from './components/HoldingForm';
 import { uid } from './utils';
-import AllowanceCard from './components/AllowanceCard';
+import AllowanceScreen from './components/AllowanceScreen';
 import { isFormRoute } from './lib/formRoute';
 import { AlertModal } from './components/Modal';
 import './index.css';
@@ -585,7 +584,7 @@ function Shell({
             <Route path="/holdings" element={<HoldingsList data={data} rawData={baseData.current} onChange={handleChange} livePrices={livePrices} priceAges={priceAges} fxRates={fxRates} />} />
             <Route
               path="/allowance"
-              element={<AllowanceRoute rawData={baseData.current} onChange={handleChange} />}
+              element={<AllowanceScreen rawData={baseData.current} onChange={handleChange} />}
             />
             <Route path="/lookthrough" element={<LookThrough data={data} fundHoldings={fundHoldings} />} />
             {isAdmin && <Route path="/funds" element={<FundManager fundHoldings={fundHoldings} onUpdateFundHoldings={handleUpdateFundHoldings} onDeleteFundHoldings={handleDeleteFundHoldings} />} />}
@@ -597,15 +596,6 @@ function Shell({
         </main>
       </div>
     </CurrencyContext.Provider>
-  );
-}
-
-function AllowanceRoute({ rawData, onChange }: { rawData: AppData; onChange: (data: AppData) => void }) {
-  const navigate = useNavigate();
-  return (
-    <FormScreen title="ISA allowance" onCancel={() => navigate('/')} onCommit={() => navigate('/')} commitLabel="Save">
-      <AllowanceCard rawData={rawData} onChange={onChange} />
-    </FormScreen>
   );
 }
 
