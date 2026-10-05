@@ -3,13 +3,12 @@
 // means the two execution paths can never drift from each other.
 import type { FireSettings } from '../types';
 import { runMonteCarlo, solveEarliestFireAge, solveRequiredContribution, successCurve, type MonteCarloResult } from './monteCarlo';
-import { planToAgeOf } from './fireEngine';
+import { planToAgeOf, type FirePots } from './fireEngine';
 
 export interface FireCalcRequest {
   id: number;
   settings: FireSettings;
-  accessible: number;
-  pension: number;
+  pots: FirePots;
 }
 
 export interface FireCalcResult {
@@ -31,27 +30,27 @@ export const MC_RUNS = 600;
 export const CURVE_RUNS = 300;
 
 export function runFireCalc(req: FireCalcRequest): FireCalcResult {
-  const { id, settings, accessible, pension } = req;
+  const { id, settings, pots } = req;
 
   const planTo = planToAgeOf(settings);
   const degenerate = planTo <= settings.currentAge + 1;
   const mode = settings.fireMode ?? 'earliest';
 
-  const solvedAge = degenerate ? null : solveEarliestFireAge(settings, accessible, pension, { runs: MC_RUNS });
+  const solvedAge = degenerate ? null : solveEarliestFireAge(settings, pots, { runs: MC_RUNS });
   // Stale persisted values (v1 default 55) can sit below currentAge or beyond planToAge.
   const chosenAge = Math.min(Math.max(settings.targetRetirementAge ?? 55, settings.currentAge), planTo);
   const headlineAge = mode === 'earliest' ? solvedAge : chosenAge;
 
-  const mc = headlineAge != null ? runMonteCarlo(settings, accessible, pension, headlineAge, { runs: MC_RUNS }) : null;
-  const curve = degenerate ? [] : successCurve(settings, accessible, pension, { runs: CURVE_RUNS });
+  const mc = headlineAge != null ? runMonteCarlo(settings, pots, headlineAge, { runs: MC_RUNS }) : null;
+  const curve = degenerate ? [] : successCurve(settings, pots, { runs: CURVE_RUNS });
 
   // Same seed and run count as the headline (common random numbers) so the deltas are real.
   let sensitivity: FireCalcResult['sensitivity'] = null;
   if (headlineAge != null && !degenerate) {
-    const later = runMonteCarlo(settings, accessible, pension, Math.min(headlineAge + 1, planTo - 1), { runs: MC_RUNS });
+    const later = runMonteCarlo(settings, pots, Math.min(headlineAge + 1, planTo - 1), { runs: MC_RUNS });
     const lessSpend = runMonteCarlo(
       { ...settings, annualExpensesInRetirement: Math.max(settings.annualExpensesInRetirement - 2000, 0) },
-      accessible, pension, headlineAge, { runs: MC_RUNS },
+      pots, headlineAge, { runs: MC_RUNS },
     );
     sensitivity = { later: later.successRate, lessSpend: lessSpend.successRate };
   }
@@ -63,7 +62,7 @@ export function runFireCalc(req: FireCalcRequest): FireCalcResult {
   const targetAge = mode === 'earliest' ? (solvedAge ?? chosenAge) : chosenAge;
   const requiredContribution = degenerate
     ? null
-    : solveRequiredContribution(settings, accessible, pension, targetAge, { runs: MC_RUNS });
+    : solveRequiredContribution(settings, pots, targetAge, { runs: MC_RUNS });
 
   return { id, solvedAge, headlineAge, mc, curve, sensitivity, requiredContribution };
 }

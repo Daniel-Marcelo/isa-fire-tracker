@@ -14,6 +14,7 @@ const defaultFireSettings: FireSettings = {
   monthlyPensionContribution: 0,
   pensionAccessAge: 57,
   expectedAnnualReturn: 7,
+  cashAnnualReturn: 3,
   inflationRate: 3,
   annualExpensesInRetirement: 25000,
   withdrawalRate: 3.5,
@@ -25,6 +26,7 @@ const defaultFireSettings: FireSettings = {
   statePensionAnnual: 12000,
   statePensionAge: 67,
   pensionTaxRate: 15,
+  giaCgtRate: 10,
 };
 
 const defaultUserSettings: UserSettings = {

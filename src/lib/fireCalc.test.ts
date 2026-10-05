@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { FireSettings } from '../types';
 import { runFireCalc, MC_RUNS, type FireCalcRequest } from './fireCalc';
+import { potsFromAccessible } from './fireEngine';
 
 function makeSettings(overrides: Partial<FireSettings> = {}): FireSettings {
   return {
@@ -24,8 +25,7 @@ describe('runFireCalc', () => {
     const req: FireCalcRequest = {
       id: 1,
       settings: makeSettings(),
-      accessible: 300_000,
-      pension: 150_000,
+      pots: potsFromAccessible(300_000, 150_000),
     };
     const result = runFireCalc(req);
     expect(result.id).toBe(1);
@@ -41,8 +41,7 @@ describe('runFireCalc', () => {
       id: 2,
       // planToAge <= currentAge + 1 makes the horizon degenerate.
       settings: makeSettings({ currentAge: 96, planToAge: 96 }),
-      accessible: 300_000,
-      pension: 150_000,
+      pots: potsFromAccessible(300_000, 150_000),
     };
     const result = runFireCalc(req);
     expect(result.id).toBe(2);
@@ -60,8 +59,7 @@ describe('runFireCalc', () => {
     const req: FireCalcRequest = {
       id: 3,
       settings: makeSettings({ returnVolatility: 12 }),
-      accessible: 250_000,
-      pension: 120_000,
+      pots: potsFromAccessible(250_000, 120_000),
     };
     const a = runFireCalc(req);
     const b = runFireCalc(req);

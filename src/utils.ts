@@ -71,3 +71,13 @@ export function isPensionType(t?: string): boolean {
 export function isCashType(t?: string): boolean {
   return CASH_ACCOUNT_TYPES.has(t ?? '');
 }
+
+/** FIRE-engine bucket for an account type. Unlabelled providers stay ISA (tax-free). */
+export type FireBucket = 'cash' | 'isa' | 'gia' | 'pension';
+
+export function fireBucket(accountType?: string): FireBucket {
+  if (isPensionType(accountType)) return 'pension';
+  if (isCashType(accountType)) return 'cash';
+  if (accountType === 'GIA') return 'gia';
+  return 'isa';
+}

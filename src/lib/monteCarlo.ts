@@ -1,5 +1,15 @@
 import type { FireSettings } from '../types';
-import { drawdownParamsFrom, monthlyWithdrawals, planToAgeOf, targetConfidenceOf } from './fireEngine';
+import {
+  cashAnnualReturnOf,
+  drawdownParamsFrom,
+  monthlyWithdrawals,
+  planToAgeOf,
+  rawAccessible,
+  rawTotal,
+  sumAll,
+  targetConfidenceOf,
+  type FirePots,
+} from './fireEngine';
 
 export interface MonteCarloResult {
   /** Fraction of simulated paths (0..1) where money lasted to endAge. */
@@ -34,16 +44,20 @@ export function mulberry32(seed: number): () => number {
   };
 }
 
+function clonePots(p: FirePots): FirePots {
+  return { cash: p.cash, isa: p.isa, gia: p.gia, pension: p.pension };
+}
+
 /**
  * Simulate monthly lognormal real returns against the same contribution/drawdown
  * rules (fireEngine.monthlyWithdrawals) as the deterministic projection, retiring
- * every path at retireAge. A path fails if the accessible pot is exhausted before
- * pension access, or the combined pot is exhausted before endAge.
+ * every path at retireAge. Cash compounds at its own (deterministic) real rate;
+ * ISA/GIA/pension share the equity shock. A path fails if the bridge can't be
+ * funded before pension access, or the combined pot is exhausted before endAge.
  */
 export function runMonteCarlo(
   settings: FireSettings,
-  accessibleStart: number,
-  pensionStart: number,
+  pots0: FirePots,
   retireAge: number,
   opts: MonteCarloOptions = {},
 ): MonteCarloResult {
@@ -54,6 +68,8 @@ export function runMonteCarlo(
   const dd = drawdownParamsFrom(settings);
 
   const realAnnual = (1 + expectedAnnualReturn / 100) / (1 + inflationRate / 100) - 1;
+  const cashRealAnnual = (1 + cashAnnualReturnOf(settings) / 100) / (1 + inflationRate / 100) - 1;
+  const cashGrowth = Math.pow(1 + cashRealAnnual, 1 / 12); // deterministic; σ = 0
   const sigmaA = Math.max(settings.returnVolatility ?? 15, 0) / 100;
   const sigmaM = sigmaA / Math.sqrt(12);
   // Median-preserving drift with the lognormal -σ²/2 correction; at σ=0 this is
@@ -80,42 +96,50 @@ export function runMonteCarlo(
     return r * Math.cos(2 * Math.PI * u2);
   }
 
-  // samples[yearIndex] = combined wealth of every run at that age
   const samples: Float64Array[] = Array.from({ length: years }, () => new Float64Array(runs));
   let successes = 0;
 
   for (let run = 0; run < runs; run++) {
-    let accessible = accessibleStart;
-    let pension = pensionStart;
+    let pots = clonePots(pots0);
     let failed = false;
 
     for (let m = 0; m < months; m++) {
       const age = currentAge + m / 12;
       if (m % 12 === 0) {
-        samples[m / 12][run] = Math.max(accessible, 0) + Math.max(pension, 0);
+        samples[m / 12][run] = sumAll(pots);
       }
 
-      const growth = Math.exp(muM + sigmaM * normal());
+      const equityGrowth = Math.exp(muM + sigmaM * normal());
+      pots = {
+        cash: pots.cash * cashGrowth,
+        isa: pots.isa * equityGrowth,
+        gia: pots.gia * equityGrowth,
+        pension: pots.pension * equityGrowth,
+      };
 
       if (age < retireAge) {
-        accessible = accessible * growth + monthlyContribution;
-        pension = pension * growth + monthlyPension;
+        pots.isa += monthlyContribution;
+        pots.pension += monthlyPension;
       } else {
-        const w = monthlyWithdrawals(age, accessible, pension, dd);
-        accessible = accessible * growth - w.fromAccessible;
-        pension = pension * growth - w.fromPension;
+        const w = monthlyWithdrawals(age, pots, dd);
+        pots.cash -= w.fromCash;
+        pots.isa -= w.fromIsa;
+        pots.gia -= w.fromGia;
+        pots.pension -= w.fromPension;
         if (age < pensionAccessAge) {
-          if (accessible < 0) {
+          if (w.unmetNeed > 0 || rawAccessible(pots) < 0) {
             if (!failed) failed = true;
-            accessible = 0; // keep simulating for the bands, but the path has failed
+            pots.cash = Math.max(pots.cash, 0);
+            pots.isa = Math.max(pots.isa, 0);
+            pots.gia = Math.max(pots.gia, 0);
           }
-        } else if (!failed && accessible + pension < 0) {
+        } else if (!failed && rawTotal(pots) < 0) {
           failed = true;
         }
       }
     }
     const lastYear = Math.floor((months - 1) / 12);
-    if (lastYear + 1 < years) samples[lastYear + 1][run] = Math.max(accessible, 0) + Math.max(pension, 0);
+    if (lastYear + 1 < years) samples[lastYear + 1][run] = Math.max(sumAll(pots), 0);
 
     if (!failed) successes++;
   }
@@ -136,14 +160,11 @@ export function runMonteCarlo(
 /**
  * Earliest retirement age (month resolution) whose Monte Carlo success rate
  * meets the settings' target confidence, or null if even retiring at
- * planToAge − 1 misses it. Success is non-decreasing in retirement age
- * (longer accumulation, shorter drawdown), so binary search is valid; every
- * evaluation reuses the same seed so the search is deterministic.
+ * planToAge − 1 misses it.
  */
 export function solveEarliestFireAge(
   settings: FireSettings,
-  accessibleStart: number,
-  pensionStart: number,
+  pots: FirePots,
   opts: MonteCarloOptions = {},
 ): number | null {
   const { currentAge } = settings;
@@ -157,14 +178,13 @@ export function solveEarliestFireAge(
     endAge,
   };
   const meets = (monthsFromNow: number) =>
-    runMonteCarlo(settings, accessibleStart, pensionStart, currentAge + monthsFromNow / 12, mcOpts)
+    runMonteCarlo(settings, pots, currentAge + monthsFromNow / 12, mcOpts)
       .successRate >= target;
 
   let lo = 0;
   let hi = Math.round((endAge - 1 - currentAge) * 12);
   if (!meets(hi)) return null;
   if (meets(lo)) return currentAge;
-  // Invariant: meets(hi) && !meets(lo); find the smallest passing month.
   while (hi - lo > 1) {
     const mid = Math.floor((lo + hi) / 2);
     if (meets(mid)) hi = mid; else lo = mid;
@@ -173,81 +193,72 @@ export function solveEarliestFireAge(
 }
 
 /**
- * Smallest total monthly contribution (accessible + pension combined) whose Monte Carlo
- * success rate at `retireAge` meets the settings' target confidence, holding the current
- * accessible:pension contribution ratio fixed. Returns null if even a very large
- * contribution can't reach the target (e.g. retireAge below currentAge, or spending so
- * high the bridge fails structurally), and 0 if the current pots already suffice with no
- * contributions.
+ * Smallest total monthly contribution (ISA + pension combined) whose Monte Carlo
+ * success rate at `retireAge` meets the settings' target confidence, holding the
+ * current ISA:pension contribution ratio fixed. Returns null if unreachable, 0 if
+ * current pots already suffice with no contributions.
  */
 export function solveRequiredContribution(
   settings: FireSettings,
-  accessibleStart: number,
-  pensionStart: number,
+  pots: FirePots,
   retireAge: number,
   opts: MonteCarloOptions = {},
 ): number | null {
-  // A zero-length (or negative) accumulation window can't be solved for.
   if (retireAge <= settings.currentAge) return null;
 
   const target = targetConfidenceOf(settings) / 100;
   const acc0 = Math.max(settings.monthlyContribution, 0);
   const pen0 = Math.max(settings.monthlyPensionContribution ?? 0, 0);
   const base = acc0 + pen0;
-  // Split ratio: if the user contributes nothing today, route new money to accessible
-  // (the ISA bridge is what usually binds for early retirement).
-  const accShare = base > 0 ? acc0 / base : 1;
+  // Split ratio: if the user contributes nothing today, route new money to ISA
+  // (the bridge pot that usually binds for early retirement).
+  const isaShare = base > 0 ? acc0 / base : 1;
 
   const rateAt = (total: number) => {
     const s2: FireSettings = {
       ...settings,
-      monthlyContribution: total * accShare,
-      monthlyPensionContribution: total * (1 - accShare),
+      monthlyContribution: total * isaShare,
+      monthlyPensionContribution: total * (1 - isaShare),
     };
-    return runMonteCarlo(s2, accessibleStart, pensionStart, retireAge,
+    return runMonteCarlo(s2, pots, retireAge,
       { runs: opts.runs ?? DEFAULT_RUNS, seed: opts.seed ?? MC_SEED, endAge: opts.endAge }).successRate;
   };
 
   if (rateAt(0) >= target) return 0;
 
-  // Find an upper bound that meets the target (double until it does, capped).
   let hi = Math.max(base, 500);
   let guard = 0;
   while (rateAt(hi) < target) {
     hi *= 2;
-    if (++guard > 20) return null;         // unreachable at any sane saving rate
+    if (++guard > 20) return null;
   }
   let lo = 0;
-  // Binary search to ~£10/month resolution.
   while (hi - lo > 10) {
     const mid = (lo + hi) / 2;
     if (rateAt(mid) >= target) hi = mid; else lo = mid;
   }
-  return Math.ceil(hi / 10) * 10;          // round up to the nearest £10, stay >= target
+  return Math.ceil(hi / 10) * 10;
 }
 
 /**
  * Success probability at whole-number retirement ages, for the confidence-vs-age
- * curve. Uses fewer runs than the headline number (chart resolution doesn't need
- * 1,000) but the same fixed seed. Stops once the rate clears 99% twice in a row,
- * or after 30 points.
+ * curve.
  */
 export function successCurve(
   settings: FireSettings,
-  accessibleStart: number,
-  pensionStart: number,
+  pots: FirePots,
   opts: MonteCarloOptions = {},
 ): { age: number; pct: number }[] {
   const endAge = opts.endAge ?? planToAgeOf(settings);
   const mcOpts: MonteCarloOptions = { runs: opts.runs ?? 400, seed: opts.seed ?? MC_SEED, endAge };
-  const start = Math.ceil(settings.currentAge);
+  const ageStart = Math.ceil(settings.currentAge);
   const points: { age: number; pct: number }[] = [];
   let clearedTarget = 0;
 
   for (let i = 0; i < 30; i++) {
-    const age = start + i;
+    const age = ageStart + i;
     if (age >= endAge) break;
-    const { successRate } = runMonteCarlo(settings, accessibleStart, pensionStart, age, mcOpts);
+    const { successRate } = runMonteCarlo(settings, pots, age, mcOpts);
     points.push({ age, pct: Math.round(successRate * 1000) / 10 });
     clearedTarget = successRate > 0.99 ? clearedTarget + 1 : 0;
     if (clearedTarget >= 2) break;

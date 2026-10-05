@@ -6,9 +6,8 @@ import {
 import type { AppData, FireSettings } from '../types';
 import { formatCurrency, formatCurrencyShort } from '../utils';
 import { project } from '../lib/fireProjection';
-import { planToAgeOf, targetConfidenceOf } from '../lib/fireEngine';
+import { planToAgeOf, potsFromProviders, targetConfidenceOf } from '../lib/fireEngine';
 import { runFireCalc, type FireCalcRequest, type FireCalcResult } from '../lib/fireCalc';
-import { isPensionType } from '../utils';
 
 interface Props {
   data: AppData;
@@ -80,13 +79,8 @@ export default function FIRECalculator({ data, rawData, onChange }: Props) {
     onChange({ ...rawData, fireSettings: { ...rawData.fireSettings, ...patch } });
   }
 
-  const accessibleValue = data.providers
-    .filter(p => !isPensionType(p.accountType))
-    .reduce((sum, p) => sum + p.holdings.reduce((s, h) => s + (h.currentValue ?? 0), 0), 0);
-
-  const pensionValue = data.providers
-    .filter(p => isPensionType(p.accountType))
-    .reduce((sum, p) => sum + p.holdings.reduce((s, h) => s + (h.currentValue ?? 0), 0), 0);
+  const pots = useMemo(() => potsFromProviders(data.providers), [data.providers]);
+  const pensionValue = pots.pension;
 
   const mode = s.fireMode ?? 'earliest';
   const planTo = planToAgeOf(s);
@@ -102,8 +96,8 @@ export default function FIRECalculator({ data, rawData, onChange }: Props) {
   // (The heavy Monte Carlo suite runs in the worker below, off the main thread.)
   const ds = useDeferredValue(s);
   const result = useMemo(
-    () => project(ds, accessibleValue, pensionValue),
-    [ds, accessibleValue, pensionValue],
+    () => project(ds, pots),
+    [ds, pots],
   );
   const smoothAge = result.earlyFireAge ?? result.fullFireAge;
 
@@ -148,7 +142,7 @@ export default function FIRECalculator({ data, rawData, onChange }: Props) {
         setTimeout(() => {
           if (id !== reqIdRef.current) return; // a newer edit superseded this attempt
           try {
-            const result = runFireCalc({ id, settings: s, accessible: accessibleValue, pension: pensionValue });
+            const result = runFireCalc({ id, settings: s, pots });
             setCalc(result);
             setCalcError(true);
           } catch {
@@ -183,7 +177,7 @@ export default function FIRECalculator({ data, rawData, onChange }: Props) {
           w.terminate();
           runOnMainThread();
         }, 8000);
-        const req: FireCalcRequest = { id, settings: s, accessible: accessibleValue, pension: pensionValue };
+        const req: FireCalcRequest = { id, settings: s, pots };
         w.postMessage(req);
       } catch {
         // Worker construction itself threw (e.g. module workers unsupported).
@@ -191,7 +185,7 @@ export default function FIRECalculator({ data, rawData, onChange }: Props) {
       }
     }, 300);
     return () => { clearTimeout(t); clearTimeout(watchdog); };
-  }, [s, accessibleValue, pensionValue]);
+  }, [s, pots]);
 
   const solvedAge = calc?.solvedAge ?? null;
   const chosenAge = Math.min(Math.max(s.targetRetirementAge ?? 55, s.currentAge), planTo);
@@ -278,7 +272,7 @@ export default function FIRECalculator({ data, rawData, onChange }: Props) {
         )}
         {activeTab === 'split' ? (
           <>
-            <Area type="monotone" dataKey="accessible" stroke="#6366f1" strokeWidth={2} fill="url(#colorAcc)" name="Accessible (ISA/GIA)" />
+            <Area type="monotone" dataKey="accessible" stroke="#6366f1" strokeWidth={2} fill="url(#colorAcc)" name="Cash + ISA + GIA" />
             <Area type="monotone" dataKey="pension" stroke="#a78bfa" strokeWidth={2} fill="url(#colorPen)" name="Pension (SIPP/Workplace)" />
           </>
         ) : (
@@ -304,14 +298,14 @@ export default function FIRECalculator({ data, rawData, onChange }: Props) {
               <th className="text-left px-4 py-3 font-medium">Age</th>
               <th className="text-left px-4 py-3 font-medium">Year</th>
               <th className="text-right px-4 py-3 font-medium text-indigo-400">
-                <TextTooltip text={`Compounds at ~${realRate}% real/yr + £${monthlyContribution.toLocaleString()}/mo contributions`} className="border-b border-dashed border-indigo-700">ISA / GIA</TextTooltip>
+                <TextTooltip text={`ISA & GIA compound at ~${realRate}% real/yr; cash at its own rate. New contributions (£${monthlyContribution.toLocaleString()}/mo) go to the ISA.`} className="border-b border-dashed border-indigo-700">Cash + ISA + GIA</TextTooltip>
               </th>
               <th className="text-right px-4 py-3 font-medium text-violet-400">
                 <TextTooltip text={`Compounds at ~${realRate}% real/yr + £${monthlyPension.toLocaleString()}/mo contributions`} className="border-b border-dashed border-violet-700">Pension</TextTooltip>
               </th>
               <th className="text-right px-4 py-3 font-medium text-slate-400">Combined</th>
               <th className="text-right px-4 py-3 font-medium text-green-400">
-                <TextTooltip text="Actual pot outflow that year: spending minus state pension, with pension withdrawals grossed up for tax" className="border-b border-dashed border-green-700">Withdrawn/yr</TextTooltip>
+                <TextTooltip text="Pot outflow that year: cash → ISA → GIA (CGT gross-up) → pension after access (tax gross-up), after state pension" className="border-b border-dashed border-green-700">Withdrawn/yr</TextTooltip>
               </th>
             </tr>
           </thead>
@@ -390,13 +384,15 @@ export default function FIRECalculator({ data, rawData, onChange }: Props) {
         </h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <NumberInput label="Current age" value={s.currentAge} min={18} max={80} onChange={v => update({ currentAge: v })} />
-          <NumberInput label="Expected annual return (%/yr)" value={s.expectedAnnualReturn} min={0} max={30} step={0.5} onChange={v => update({ expectedAnnualReturn: v })} suffix="%" hint={`Nominal return (e.g. 7%). Real return ≈ ${(s.expectedAnnualReturn - s.inflationRate).toFixed(1)}%`} />
-          <NumberInput label="Inflation rate (%/yr)" value={s.inflationRate} min={0} max={20} step={0.5} onChange={v => update({ inflationRate: v })} suffix="%" hint="Subtracted from nominal return. All values in today's money." />
+          <NumberInput label="Equity return (%/yr)" value={s.expectedAnnualReturn} min={0} max={30} step={0.5} onChange={v => update({ expectedAnnualReturn: v })} suffix="%" hint={`ISA, GIA and pension. Real ≈ ${(s.expectedAnnualReturn - s.inflationRate).toFixed(1)}%`} />
+          <NumberInput label="Cash return (%/yr)" value={s.cashAnnualReturn ?? 3} min={0} max={10} step={0.25} onChange={v => update({ cashAnnualReturn: v })} suffix="%" hint={`Cash ISA / Savings only. Real ≈ ${((s.cashAnnualReturn ?? 3) - s.inflationRate).toFixed(1)}%. No volatility.`} />
+          <NumberInput label="Inflation rate (%/yr)" value={s.inflationRate} min={0} max={20} step={0.5} onChange={v => update({ inflationRate: v })} suffix="%" hint="Subtracted from nominal returns. All values in today's money." />
           <NumberInput label="Pension access age" value={s.pensionAccessAge ?? 57} min={55} max={70} onChange={v => update({ pensionAccessAge: v })} />
           <NumberInput label="Target confidence (%)" value={s.targetConfidence ?? 90} min={50} max={99} onChange={v => update({ targetConfidence: v })} suffix="%" hint="Monte Carlo success rate the earliest-age solver must reach" />
           <NumberInput label="Plan to age" value={s.planToAge ?? 95} min={80} max={105} onChange={v => update({ planToAge: v })} hint="Money must last to this age · horizon capped at 75 years" />
-          <NumberInput label="Return volatility (%/yr)" value={s.returnVolatility ?? 15} min={0} max={50} step={1} onChange={v => update({ returnVolatility: v })} suffix="%" hint="Annual std dev. All-equity ≈ 15–18, 60/40 ≈ 10, cash ≈ 1" />
-          <NumberInput label="Pension drawdown tax (%)" value={s.pensionTaxRate ?? 15} min={0} max={60} step={1} onChange={v => update({ pensionTaxRate: v })} suffix="%" hint="Effective rate on pension withdrawals; ISA withdrawals are tax-free." />
+          <NumberInput label="Equity volatility (%/yr)" value={s.returnVolatility ?? 15} min={0} max={50} step={1} onChange={v => update({ returnVolatility: v })} suffix="%" hint="ISA, GIA and pension only. All-equity ≈ 15–18, 60/40 ≈ 10. Cash has none." />
+          <NumberInput label="Pension drawdown tax (%)" value={s.pensionTaxRate ?? 15} min={0} max={60} step={1} onChange={v => update({ pensionTaxRate: v })} suffix="%" hint="Effective rate on pension withdrawals; ISA and cash are tax-free." />
+          <NumberInput label="GIA CGT rate (%)" value={s.giaCgtRate ?? 10} min={0} max={40} step={1} onChange={v => update({ giaCgtRate: v })} suffix="%" hint="Effective rate on GIA withdrawals after the annual allowance. ISA/cash are tax-free." />
           <NumberInput label="Safe withdrawal rate (%)" value={s.withdrawalRate ?? 3.5} min={2} max={6} step={0.1} onChange={v => update({ withdrawalRate: v })} suffix="%" hint="Used for the Portfolio tab's SWR card — FIRE age is confidence-based now." />
         </div>
         <div className="mt-5 pt-4 border-t border-slate-700/50">
@@ -418,21 +414,31 @@ export default function FIRECalculator({ data, rawData, onChange }: Props) {
         </div>
       </div>
 
-      {/* Pot summary */}
-      <div className="grid grid-cols-2 gap-3">
+      {/* Pot summary — four wrappers the engine actually models */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <div className="bg-slate-800/70 rounded-xl border border-slate-700/50 p-5">
-          <p className="text-xs font-medium text-indigo-400 uppercase tracking-wide mb-1">ISA / GIA / Cash</p>
-          <p className="text-2xl font-bold text-slate-50 tabular-nums">{fmt(accessibleValue)}</p>
-          <p className="text-xs text-slate-600 mt-1">From holdings · growth assumption applies to the whole pot, incl. cash</p>
+          <p className="text-xs font-medium text-teal-400 uppercase tracking-wide mb-1">Cash</p>
+          <p className="text-2xl font-bold text-slate-50 tabular-nums">{fmt(pots.cash)}</p>
+          <p className="text-xs text-slate-600 mt-1">Cash ISA / Savings · {s.cashAnnualReturn ?? 3}% · drawn first</p>
+        </div>
+        <div className="bg-slate-800/70 rounded-xl border border-slate-700/50 p-5">
+          <p className="text-xs font-medium text-indigo-400 uppercase tracking-wide mb-1">ISA</p>
+          <p className="text-2xl font-bold text-slate-50 tabular-nums">{fmt(pots.isa)}</p>
+          <p className="text-xs text-slate-600 mt-1">S&amp;S ISA · equity return · tax-free</p>
           <div className="mt-4 pt-3 border-t border-slate-700/50">
             <p className="text-xs font-medium text-slate-500 mb-2">Monthly contributions</p>
             <NumberInput label="" value={s.monthlyContribution} min={0} step={50} onChange={v => update({ monthlyContribution: v })} prefix="£" />
           </div>
         </div>
         <div className="bg-slate-800/70 rounded-xl border border-slate-700/50 p-5">
-          <p className="text-xs font-medium text-violet-400 uppercase tracking-wide mb-1">Pension / SIPP</p>
+          <p className="text-xs font-medium text-amber-400 uppercase tracking-wide mb-1">GIA</p>
+          <p className="text-2xl font-bold text-slate-50 tabular-nums">{fmt(pots.gia)}</p>
+          <p className="text-xs text-slate-600 mt-1">Taxable · {s.giaCgtRate ?? 10}% effective CGT on withdrawals</p>
+        </div>
+        <div className="bg-slate-800/70 rounded-xl border border-slate-700/50 p-5">
+          <p className="text-xs font-medium text-violet-400 uppercase tracking-wide mb-1">Pension</p>
           <p className="text-2xl font-bold text-slate-50 tabular-nums">{fmt(pensionValue)}</p>
-          <p className="text-xs text-slate-600 mt-1">Accessible at {s.pensionAccessAge ?? 57}</p>
+          <p className="text-xs text-slate-600 mt-1">SIPP / workplace · accessible at {s.pensionAccessAge ?? 57}</p>
           <div className="mt-4 pt-3 border-t border-slate-700/50">
             <p className="text-xs font-medium text-slate-500 mb-2">Monthly contributions</p>
             <NumberInput label="" value={s.monthlyPensionContribution ?? 0} min={0} step={50} onChange={v => update({ monthlyPensionContribution: v })} prefix="£" />
@@ -583,7 +589,7 @@ export default function FIRECalculator({ data, rawData, onChange }: Props) {
           <div className="mt-4">
             {marketChart}
             <p className="text-xs text-slate-600 mt-2">
-              The median sits below the deterministic projection by design — volatility drags compound growth. A path fails if the ISA/GIA pot empties before pension access, or everything empties before {planTo}.
+              The median sits below the deterministic projection by design — equity volatility drags compound growth (cash has none). A path fails if cash + ISA + GIA can't fund the bridge before pension access, or everything empties before {planTo}.
             </p>
           </div>
         )}
