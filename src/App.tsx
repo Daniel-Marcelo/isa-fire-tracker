@@ -22,6 +22,7 @@ import LookThrough from './components/LookThrough';
 import FundManager from './components/FundManager';
 import AuthScreen from './components/AuthScreen';
 import Home from './components/Home';
+import HoldingsList from './components/HoldingsList';
 import FormScreen from './components/FormScreen';
 import AllowanceCard from './components/AllowanceCard';
 import { isFormRoute } from './lib/formRoute';
@@ -554,7 +555,7 @@ function Shell({
                 />
               }
             />
-            <Route path="/holdings/*" element={<ISATracker data={data} rawData={baseData.current} onChange={handleChange} livePrices={livePrices} priceAges={priceAges} fxRates={fxRates} />} />
+            <Route path="/holdings/*" element={<HoldingsList data={data} rawData={baseData.current} onChange={handleChange} livePrices={livePrices} priceAges={priceAges} fxRates={fxRates} />} />
             <Route
               path="/allowance"
               element={<AllowanceRoute rawData={baseData.current} onChange={handleChange} />}
