@@ -11,6 +11,8 @@ function data(providers: Provider[], contributions: AppData['contributions'] = [
       currentAge: 40,
       targetRetirementAge: 55,
       monthlyContribution: 0,
+      monthlyPensionContribution: 0,
+      pensionAccessAge: 57,
       expectedAnnualReturn: 7,
       inflationRate: 3,
       annualExpensesInRetirement: 30000,
