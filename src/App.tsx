@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
-import { Routes, Route, Navigate, NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { Routes, Route, Navigate, NavLink, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { BarChart3, Flame, Download, Upload, Layers, LogOut, Cloud, CloudOff, RefreshCw, FolderOpen, Settings } from 'lucide-react';
 import type { User } from '@supabase/supabase-js';
 import type { AppData, UploadedFundHoldings } from './types';
@@ -23,6 +23,10 @@ import AuthScreen from './components/AuthScreen';
 import Home from './components/Home';
 import HoldingsList from './components/HoldingsList';
 import FormScreen from './components/FormScreen';
+import AccountScreen from './components/AccountScreen';
+import AccountForm from './components/AccountForm';
+import HoldingForm from './components/HoldingForm';
+import { uid } from './utils';
 import AllowanceCard from './components/AllowanceCard';
 import { isFormRoute } from './lib/formRoute';
 import { AlertModal } from './components/Modal';
@@ -554,7 +558,26 @@ function Shell({
                 />
               }
             />
-            <Route path="/holdings/*" element={<HoldingsList data={data} rawData={baseData.current} onChange={handleChange} livePrices={livePrices} priceAges={priceAges} fxRates={fxRates} />} />
+            <Route path="/holdings/new" element={
+              <AccountForm data={data} rawData={baseData.current} onSave={(form) => {
+                const provider = { id: uid(), ...form, owner: form.owner || undefined, holdings: [], snapshots: [] };
+                handleChange({ ...baseData.current, providers: [...baseData.current.providers, provider] });
+                return provider.id;
+              }} />
+            } />
+            <Route path="/holdings/:providerId/edit" element={
+              <AccountEditRoute rawData={baseData.current} onChange={handleChange} />
+            } />
+            <Route path="/holdings/:providerId/holdings/new" element={
+              <HoldingRoute rawData={baseData.current} onChange={handleChange} livePrices={livePrices} priceAges={priceAges} />
+            } />
+            <Route path="/holdings/:providerId/holdings/:holdingId" element={
+              <HoldingRoute rawData={baseData.current} onChange={handleChange} livePrices={livePrices} priceAges={priceAges} />
+            } />
+            <Route path="/holdings/:providerId" element={
+              <AccountRoute data={data} rawData={baseData.current} onChange={handleChange} />
+            } />
+            <Route path="/holdings" element={<HoldingsList data={data} rawData={baseData.current} onChange={handleChange} livePrices={livePrices} priceAges={priceAges} fxRates={fxRates} />} />
             <Route
               path="/allowance"
               element={<AllowanceRoute rawData={baseData.current} onChange={handleChange} />}
@@ -577,6 +600,45 @@ function AllowanceRoute({ rawData, onChange }: { rawData: AppData; onChange: (da
       <AllowanceCard rawData={rawData} onChange={onChange} />
     </FormScreen>
   );
+}
+
+function AccountRoute({ data, rawData, onChange }: { data: AppData; rawData: AppData; onChange: (data: AppData) => void }) {
+  const { providerId } = useParams();
+  const provider = data.providers.find(p => p.id === providerId);
+  return provider ? <AccountScreen rawData={rawData} provider={provider} onChange={onChange} /> : <Navigate to="/holdings" replace />;
+}
+
+function AccountEditRoute({ rawData, onChange }: { rawData: AppData; onChange: (data: AppData) => void }) {
+  const { providerId } = useParams();
+  const navigate = useNavigate();
+  const provider = rawData.providers.find(p => p.id === providerId);
+  if (!provider) return <Navigate to="/holdings" replace />;
+  return <AccountForm data={{ ...rawData }} rawData={rawData} provider={provider} onSave={(form, existing) => {
+    if (!existing) return;
+    onChange({ ...rawData, providers: rawData.providers.map(p => p.id === existing.id ? { ...p, ...form, owner: form.owner || undefined } : p) });
+    navigate(`/holdings/${existing.id}`);
+    return existing.id;
+  }} />;
+}
+
+function HoldingRoute({ rawData, onChange, livePrices, priceAges }: {
+  rawData: AppData; onChange: (data: AppData) => void;
+  livePrices: Record<string, number>; priceAges: PriceAges;
+}) {
+  const { providerId, holdingId } = useParams();
+  const navigate = useNavigate();
+  const provider = rawData.providers.find(p => p.id === providerId);
+  const holding = provider?.holdings.find(h => h.id === holdingId);
+  if (!provider || (holdingId && !holding)) return <Navigate to="/holdings" replace />;
+  return <HoldingForm provider={provider} providerId={providerId!} holding={holding} livePrices={livePrices} priceAges={priceAges}
+    onSave={(form, existing) => {
+      onChange({ ...rawData, providers: rawData.providers.map(p => p.id === provider.id ? { ...p, holdings: existing ? p.holdings.map(h => h.id === existing.id ? { ...h, ...form } : h) : [...p.holdings, { id: uid(), ...form }] } : p) });
+      navigate(`/holdings/${provider.id}`);
+    }}
+    onDelete={(toDelete) => {
+      onChange({ ...rawData, providers: rawData.providers.map(p => p.id === provider.id ? { ...p, holdings: p.holdings.filter(h => h.id !== toDelete.id) } : p) });
+      navigate(`/holdings/${provider.id}`);
+    }} />;
 }
 
 function TabLink({ to, icon, label }: { to: string; icon: React.ReactNode; label: string }) {

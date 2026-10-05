@@ -46,6 +46,35 @@ export default function HoldingsList({ data, rawData, onChange, fxRates = {} }: 
   return (
     <div className="space-y-4">
       <div className="flex justify-end">
+        <Link to="/lookthrough" className="text-sm font-medium text-indigo-400 hover:text-indigo-300">Exposure</Link>
+      </div>
+      {(owners.length > 1 || accountTypes.length > 1) && (
+        <div className="flex flex-wrap items-center gap-3">
+          {owners.length > 1 && <FilterChips label="Owner" values={owners} selected={filterOwner} onSelect={setFilterOwner} />}
+          {accountTypes.length > 1 && <FilterChips label="Type" values={accountTypes} selected={filterType} onSelect={setFilterType} />}
+        </div>
+      )}
+      {visibleProviders.length === 0 ? (
+        <div className="text-center py-20 text-slate-700"><p className="text-base font-medium text-slate-500">No accounts yet</p></div>
+      ) : visibleProviders.map(provider => {
+        const value = provider.holdings.reduce((sum, holding) => sum + (holding.currentValue ?? 0), 0);
+        const cost = provider.holdings.reduce((sum, holding) => sum + (holding.costBasis ?? 0), 0);
+        const gain = value - cost;
+        return <Link key={provider.id} to={`/holdings/${provider.id}`} className="block bg-slate-800/70 rounded-xl border border-slate-700/50 p-4 hover:bg-slate-700/40">
+          <div className="flex items-center gap-3">
+            <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: provider.color }} />
+            <div className="flex-1 min-w-0"><div className="font-semibold text-slate-100 truncate">{provider.name}</div><div className="flex flex-wrap gap-1.5 mt-1">{provider.owner && <span className="px-2 py-0.5 rounded-full text-xs bg-slate-700 text-slate-400">{provider.owner}</span>}{provider.accountType && <span className="px-2 py-0.5 rounded-full text-xs bg-indigo-900/40 text-indigo-400">{provider.accountType}</span>}</div></div>
+            <div className="text-right shrink-0"><div className="font-semibold text-slate-100 tabular-nums">{fmtShort(value)}</div>{cost > 0 && <div className={`text-xs mt-0.5 tabular-nums ${gain >= 0 ? 'text-green-400' : 'text-red-400'}`}>{gain >= 0 ? '+' : ''}{fmtShort(gain)}</div>}</div>
+          </div>
+        </Link>;
+      })}
+      <Link to="/holdings/new" className="block w-full border border-dashed border-slate-700 rounded-xl py-3 text-center text-sm font-medium text-indigo-400 hover:bg-slate-800">Add account</Link>
+    </div>
+  );
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-end">
         <Link to="/lookthrough" className="text-sm font-medium text-indigo-400 hover:text-indigo-300 transition-colors">
           Exposure
         </Link>
