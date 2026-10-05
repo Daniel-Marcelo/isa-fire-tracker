@@ -2,19 +2,21 @@ import { Link } from 'react-router-dom';
 import type { AppData } from '../types';
 import { getCurrentTaxYearContribution } from '../store';
 import { ISA_ANNUAL_ALLOWANCE } from '../utils';
-import { project } from '../lib/fireProjection';
-import { potsFromAccessible } from '../lib/fireEngine';
 import { portfolioSummary } from '../lib/portfolioSummary';
+import { useFireCalc } from './useFireCalc';
 
 interface Props {
   data: AppData;
+  gbpData: AppData;
+  rawData: AppData;
+  onChange: (data: AppData) => void;
   pricesUpdatedAt: Date | null;
   pricesStale: boolean;
   fmt: (v: number) => string;
   fmtShort: (v: number) => string;
 }
 
-export default function Home({ data, pricesUpdatedAt, pricesStale, fmt, fmtShort }: Props) {
+export default function Home({ data, gbpData, rawData, onChange, pricesUpdatedAt, pricesStale, fmt, fmtShort }: Props) {
   const summary = portfolioSummary(data);
   const used = getCurrentTaxYearContribution(data);
   const remaining = ISA_ANNUAL_ALLOWANCE - used;
@@ -24,11 +26,7 @@ export default function Home({ data, pricesUpdatedAt, pricesStale, fmt, fmtShort
     : allowancePct >= 90
       ? 'bg-amber-400'
       : 'bg-indigo-500';
-  const fireAge = project(
-    data.fireSettings,
-    potsFromAccessible(summary.accessible, summary.pension),
-  );
-  const headlineFireAge = fireAge.earlyFireAge ?? fireAge.fullFireAge;
+  const { headlineAge, isRecomputing, calc } = useFireCalc(gbpData, rawData, onChange);
 
   return (
     <div className="space-y-4">
@@ -64,7 +62,7 @@ export default function Home({ data, pricesUpdatedAt, pricesStale, fmt, fmtShort
           <Link to="/fire" className="bg-slate-800/70 rounded-xl border border-slate-700/50 p-4 block">
             <p className="text-sm text-slate-400">FIRE age</p>
             <p className="text-2xl font-bold text-slate-50 tabular-nums mt-2">
-              {headlineFireAge ?? '—'}
+              <span className={isRecomputing && calc ? 'opacity-50' : ''}>{headlineAge ?? '—'}</span>
             </p>
           </Link>
         )}

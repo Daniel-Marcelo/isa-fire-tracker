@@ -16,7 +16,9 @@ import { applyLivePrices } from './lib/applyLivePrices';
 import { toGbpView } from './lib/gbpView';
 import { formatCurrency, formatCurrencyShort, SUPPORTED_CURRENCIES } from './utils';
 import { CurrencyContext } from './contexts/CurrencyContext';
-import FIRECalculator from './components/FIRECalculator';
+import PlanScreen from './components/PlanScreen';
+import AdjustPlan from './components/AdjustPlan';
+import AssumptionsForm from './components/AssumptionsForm';
 import LookThrough from './components/LookThrough';
 import FundManager from './components/FundManager';
 import AuthScreen from './components/AuthScreen';
@@ -551,6 +553,9 @@ function Shell({
               element={
                 <Home
                   data={data}
+                  gbpData={gbpData}
+                  rawData={baseData.current}
+                  onChange={handleChange}
                   pricesUpdatedAt={livePricesUpdatedAt}
                   pricesStale={newestPriceAsOf != null && Date.now() - newestPriceAsOf > PRICE_WARN_AGE_MS}
                   fmt={currencyContextValue.fmt}
@@ -584,7 +589,9 @@ function Shell({
             />
             <Route path="/lookthrough" element={<LookThrough data={data} fundHoldings={fundHoldings} />} />
             {isAdmin && <Route path="/funds" element={<FundManager fundHoldings={fundHoldings} onUpdateFundHoldings={handleUpdateFundHoldings} onDeleteFundHoldings={handleDeleteFundHoldings} />} />}
-            <Route path="/fire/*" element={<FIRECalculator data={gbpData} rawData={baseData.current} onChange={handleChange} />} />
+            <Route path="/fire/adjust" element={<AdjustPlan data={gbpData} rawData={baseData.current} onChange={handleChange} />} />
+            <Route path="/fire/assumptions" element={<AssumptionsForm data={gbpData} rawData={baseData.current} onChange={handleChange} />} />
+            <Route path="/fire" element={<PlanScreen data={gbpData} rawData={baseData.current} onChange={handleChange} />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>
