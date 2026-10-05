@@ -10,14 +10,27 @@ interface Props {
   onChange: (data: AppData) => void;
 }
 
+export function initialAllowanceEditor(
+  contributions: { taxYear: number; amount: number }[],
+  taxYear: number,
+) {
+  const years = Array.from(new Set([...contributions.map(c => c.taxYear), taxYear])).sort((a, b) => a - b);
+  const amounts: Record<number, string> = {};
+  for (const y of years) {
+    const existing = contributions.find(c => c.taxYear === y);
+    amounts[y] = existing ? String(existing.amount) : '';
+  }
+  return { years, amounts };
+}
+
 export default function AllowanceScreen({ rawData, onChange }: Props) {
   const navigate = useNavigate();
   const taxYear = currentTaxYear();
+  const contributions = rawData.contributions ?? [];
+  const initial = initialAllowanceEditor(contributions, taxYear);
 
-  const [years, setYears] = useState<number[]>(() => [taxYear]);
-  const [amounts, setAmounts] = useState<Record<number, string>>(() => ({
-    [taxYear]: String(getCurrentTaxYearContribution(rawData)),
-  }));
+  const [years, setYears] = useState<number[]>(initial.years);
+  const [amounts, setAmounts] = useState<Record<number, string>>(initial.amounts);
 
   const usedRaw = Number(amounts[taxYear]);
   const used = Number.isFinite(usedRaw) ? Math.max(0, usedRaw) : getCurrentTaxYearContribution(rawData);

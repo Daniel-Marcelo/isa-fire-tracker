@@ -30,6 +30,7 @@ import HoldingForm from './components/HoldingForm';
 import { uid } from './utils';
 import AllowanceScreen from './components/AllowanceScreen';
 import { isFormRoute } from './lib/formRoute';
+import { FormNoticesContext } from './components/FormScreen';
 import { AlertModal } from './components/Modal';
 import './index.css';
 
@@ -511,38 +512,13 @@ function Shell({
           </nav>
         )}
 
-        {degraded && (
-          <div className="max-w-5xl mx-auto px-4 pt-4 relative z-[60]">
-            <div className="flex flex-wrap items-center justify-between gap-3 bg-amber-900/30 border border-amber-800/40 rounded-xl px-4 py-2.5">
-              <span className="text-sm text-amber-300">
-                Couldn't reach the server — showing your last synced data (read-only).
-              </span>
-              <button
-                onClick={() => loadData(user)}
-                className="text-sm font-medium text-amber-200 border border-amber-700/60 rounded-lg px-3 py-1 hover:bg-amber-900/40 transition-colors"
-              >
-                Retry
-              </button>
-            </div>
+        {!formScreen && (degraded || conflict) && (
+          <div className="max-w-5xl mx-auto px-4 pt-4">
+            <SyncNotices degraded={degraded} conflict={conflict} onRetry={() => loadData(user)} />
           </div>
         )}
 
-        {conflict && (
-          <div className="max-w-5xl mx-auto px-4 pt-4 relative z-[60]">
-            <div className="flex flex-wrap items-center justify-between gap-3 bg-red-900/30 border border-red-800/40 rounded-xl px-4 py-2.5">
-              <span className="text-sm text-red-300">
-                This portfolio was changed on another device — your edits here aren't being saved.
-              </span>
-              <button
-                onClick={() => loadData(user)}
-                className="text-sm font-medium text-red-200 border border-red-700/60 rounded-lg px-3 py-1 hover:bg-red-900/40 transition-colors"
-              >
-                Reload
-              </button>
-            </div>
-          </div>
-        )}
-
+        <FormNoticesContext.Provider value={formScreen && (degraded || conflict) ? <SyncNotices degraded={degraded} conflict={conflict} onRetry={() => loadData(user)} /> : null}>
         <main
           className={`max-w-5xl mx-auto px-4 py-6 ${formScreen ? 'pb-0' : 'pb-24 sm:pb-8'}`}
           style={formScreen ? undefined : {paddingBottom: 'calc(6rem + env(safe-area-inset-bottom))'}}
@@ -595,6 +571,7 @@ function Shell({
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>
+        </FormNoticesContext.Provider>
       </div>
     </CurrencyContext.Provider>
   );
@@ -608,15 +585,47 @@ function AccountRoute({ data, rawData, onChange, pricesStale }: { data: AppData;
 
 function AccountEditRoute({ rawData, onChange }: { rawData: AppData; onChange: (data: AppData) => void }) {
   const { providerId } = useParams();
-  const navigate = useNavigate();
   const provider = rawData.providers.find(p => p.id === providerId);
   if (!provider) return <Navigate to="/holdings" replace />;
   return <AccountForm data={{ ...rawData }} rawData={rawData} provider={provider} onSave={(form, existing) => {
     if (!existing) return;
     onChange({ ...rawData, providers: rawData.providers.map(p => p.id === existing.id ? { ...p, ...form, owner: form.owner || undefined } : p) });
-    navigate(`/holdings/${existing.id}`);
     return existing.id;
   }} />;
+}
+
+function SyncNotices({ degraded, conflict, onRetry }: { degraded: boolean; conflict: boolean; onRetry: () => void }) {
+  if (!degraded && !conflict) return null;
+  return (
+    <div className="space-y-3">
+      {degraded && (
+        <div className="flex flex-wrap items-center justify-between gap-3 bg-amber-900/30 border border-amber-800/40 rounded-xl px-4 py-2.5">
+          <span className="text-sm text-amber-300">
+            Couldn't reach the server — showing your last synced data (read-only).
+          </span>
+          <button
+            onClick={onRetry}
+            className="text-sm font-medium text-amber-200 border border-amber-700/60 rounded-lg px-3 py-1 hover:bg-amber-900/40 transition-colors"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+      {conflict && (
+        <div className="flex flex-wrap items-center justify-between gap-3 bg-red-900/30 border border-red-800/40 rounded-xl px-4 py-2.5">
+          <span className="text-sm text-red-300">
+            This portfolio was changed on another device — your edits here aren't being saved.
+          </span>
+          <button
+            onClick={onRetry}
+            className="text-sm font-medium text-red-200 border border-red-700/60 rounded-lg px-3 py-1 hover:bg-red-900/40 transition-colors"
+          >
+            Reload
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function HoldingRoute({ rawData, onChange, livePrices, priceAges }: {
