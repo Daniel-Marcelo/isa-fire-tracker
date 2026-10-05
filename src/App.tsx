@@ -21,6 +21,7 @@ import FIRECalculator from './components/FIRECalculator';
 import LookThrough from './components/LookThrough';
 import FundManager from './components/FundManager';
 import AuthScreen from './components/AuthScreen';
+import { isFormRoute } from './lib/formRoute';
 import { AlertModal } from './components/Modal';
 import './index.css';
 
@@ -347,126 +348,32 @@ export default function App() {
             : !dataReady
             ? <Spinner />
             : (
-              <CurrencyContext.Provider value={currencyContextValue}>
-              <div className="min-h-screen bg-[#02061a]">
-                <header
-                  className="bg-slate-900/80 border-b border-slate-800 sticky top-0 z-40 backdrop-blur-md"
-                  style={{ paddingTop: 'env(safe-area-inset-top)' }}
-                >
-                  <div className="max-w-5xl mx-auto px-4 h-14 flex items-center justify-between gap-4">
-                    {/* Logo */}
-                    <div className="flex items-center gap-2.5 flex-shrink-0">
-                      <div className="w-7 h-7 bg-indigo-600 rounded-lg flex items-center justify-center">
-                        <Flame size={14} className="text-white" />
-                      </div>
-                      <span className="font-semibold text-slate-100 tracking-tight hidden sm:block">ISA & FIRE</span>
-                    </div>
-
-                    {/* Desktop nav */}
-                    <nav className="hidden sm:flex bg-slate-800 rounded-xl p-1 gap-0.5">
-                      <TabLink to="/" icon={<BarChart3 size={14} />} label="Portfolio" />
-                      <TabLink to="/lookthrough" icon={<Layers size={14} />} label="Look-through" />
-                      <TabLink to="/fire" icon={<Flame size={14} />} label="FIRE" />
-                    </nav>
-
-                    <div className="flex items-center gap-2">
-                      {/* Sync status */}
-                      {syncState !== 'idle' && (
-                        <span className="flex items-center gap-1.5 text-xs">
-                          {syncState === 'syncing' && <><Cloud size={13} className="text-indigo-400 animate-pulse" /><span className="text-slate-500 hidden sm:inline">Syncing</span></>}
-                          {syncState === 'error' && <><CloudOff size={13} className="text-red-400" /><span className="text-red-400 hidden sm:inline">Sync error</span></>}
-                        </span>
-                      )}
-
-                      {/* Stale feed warning — the refresh time below is when WE last
-                          asked; this is when the feed itself last moved. */}
-                      {newestPriceAsOf != null && Date.now() - newestPriceAsOf > PRICE_WARN_AGE_MS && (
-                        <span
-                          className="text-xs text-amber-400"
-                          title={`Price feed last updated ${new Date(newestPriceAsOf).toLocaleString()}`}
-                        >
-                          Prices may be stale
-                        </span>
-                      )}
-
-                      {/* Live prices */}
-                      <button
-                        onClick={() => refreshLivePrices(baseData.current)}
-                        disabled={livePricesLoading}
-                        title={livePricesUpdatedAt ? `Updated ${livePricesUpdatedAt.toLocaleTimeString()}` : 'Refresh live prices'}
-                        className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 border border-slate-700 hover:border-slate-600 rounded-lg px-2.5 py-1.5 hover:bg-slate-800 transition-colors disabled:opacity-40"
-                      >
-                        <RefreshCw size={13} className={livePricesLoading ? 'animate-spin' : ''} />
-                        <span className="hidden sm:inline tabular-nums">
-                          {livePricesUpdatedAt ? livePricesUpdatedAt.toLocaleTimeString() : 'Prices'}
-                        </span>
-                      </button>
-
-                      {/* User menu */}
-                      <UserMenu
-                        email={user.email ?? ''}
-                        currency={currency}
-                        currencies={SUPPORTED_CURRENCIES}
-                        onCurrencyChange={handleCurrencyChange}
-                        onExport={() => exportData(baseData.current)}
-                        onImport={handleImport}
-                        onSignOut={() => supabase.auth.signOut()}
-                        isAdmin={isAdmin}
-                      />
-                    </div>
-                  </div>
-                </header>
-
-                {/* Bottom nav — mobile only */}
-                <nav className="sm:hidden fixed bottom-0 inset-x-0 z-40 bg-slate-900/90 border-t border-slate-800 backdrop-blur-md flex" style={{paddingBottom: 'env(safe-area-inset-bottom)'}}>
-                  <BottomTabLink to="/" icon={<BarChart3 size={20} />} label="Portfolio" />
-                  <BottomTabLink to="/lookthrough" icon={<Layers size={20} />} label="Look-through" />
-                  <BottomTabLink to="/fire" icon={<Flame size={20} />} label="FIRE" />
-                </nav>
-
-                {degraded && (
-                  <div className="max-w-5xl mx-auto px-4 pt-4">
-                    <div className="flex flex-wrap items-center justify-between gap-3 bg-amber-900/30 border border-amber-800/40 rounded-xl px-4 py-2.5">
-                      <span className="text-sm text-amber-300">
-                        Couldn't reach the server — showing your last synced data (read-only).
-                      </span>
-                      <button
-                        onClick={() => loadData(user)}
-                        className="text-sm font-medium text-amber-200 border border-amber-700/60 rounded-lg px-3 py-1 hover:bg-amber-900/40 transition-colors"
-                      >
-                        Retry
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {conflict && (
-                  <div className="max-w-5xl mx-auto px-4 pt-4">
-                    <div className="flex flex-wrap items-center justify-between gap-3 bg-red-900/30 border border-red-800/40 rounded-xl px-4 py-2.5">
-                      <span className="text-sm text-red-300">
-                        This portfolio was changed on another device — your edits here aren't being saved.
-                      </span>
-                      <button
-                        onClick={() => loadData(user)}
-                        className="text-sm font-medium text-red-200 border border-red-700/60 rounded-lg px-3 py-1 hover:bg-red-900/40 transition-colors"
-                      >
-                        Reload
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                <main className="max-w-5xl mx-auto px-4 py-6 pb-24 sm:pb-8" style={{paddingBottom: 'calc(6rem + env(safe-area-inset-bottom))'}}>
-                  <Routes>
-                    <Route path="/" element={<ISATracker data={data} rawData={baseData.current} onChange={handleChange} livePrices={livePrices} priceAges={priceAges} fxRates={fxRates} />} />
-                    <Route path="/lookthrough" element={<LookThrough data={data} fundHoldings={fundHoldings} />} />
-                    {isAdmin && <Route path="/funds" element={<FundManager fundHoldings={fundHoldings} onUpdateFundHoldings={handleUpdateFundHoldings} onDeleteFundHoldings={handleDeleteFundHoldings} />} />}
-                    <Route path="/fire" element={<FIRECalculator data={gbpData} rawData={baseData.current} onChange={handleChange} />} />
-                    <Route path="*" element={<Navigate to="/" replace />} />
-                  </Routes>
-                </main>
-              </div>
-              </CurrencyContext.Provider>
+              <Shell
+                user={user}
+                data={data}
+                gbpData={gbpData}
+                baseData={baseData}
+                handleChange={handleChange}
+                livePrices={livePrices}
+                priceAges={priceAges}
+                fxRates={fxRates}
+                fundHoldings={fundHoldings}
+                isAdmin={isAdmin}
+                syncState={syncState}
+                degraded={degraded}
+                conflict={conflict}
+                newestPriceAsOf={newestPriceAsOf}
+                livePricesLoading={livePricesLoading}
+                livePricesUpdatedAt={livePricesUpdatedAt}
+                refreshLivePrices={refreshLivePrices}
+                loadData={loadData}
+                currency={currency}
+                currencyContextValue={currencyContextValue}
+                handleCurrencyChange={handleCurrencyChange}
+                handleImport={handleImport}
+                handleUpdateFundHoldings={handleUpdateFundHoldings}
+                handleDeleteFundHoldings={handleDeleteFundHoldings}
+              />
             )
         }
       />
@@ -474,6 +381,182 @@ export default function App() {
         <AlertModal title="Import failed" message={importError} onClose={() => setImportError(null)} />
       )}
     </Routes>
+  );
+}
+
+interface ShellProps {
+  user: User;
+  data: AppData;
+  gbpData: AppData;
+  baseData: { current: AppData };
+  handleChange: (next: AppData) => void;
+  livePrices: Record<string, number>;
+  priceAges: PriceAges;
+  fxRates: FxRates;
+  fundHoldings: UploadedFundHoldings[];
+  isAdmin: boolean;
+  syncState: SyncState;
+  degraded: boolean;
+  conflict: boolean;
+  newestPriceAsOf: number | null;
+  livePricesLoading: boolean;
+  livePricesUpdatedAt: Date | null;
+  refreshLivePrices: (base: AppData) => Promise<void>;
+  loadData: (user: User) => void;
+  currency: string;
+  currencyContextValue: React.ComponentProps<typeof CurrencyContext.Provider>['value'];
+  handleCurrencyChange: (currency: string) => void;
+  handleImport: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  handleUpdateFundHoldings: (uploaded: UploadedFundHoldings) => Promise<void>;
+  handleDeleteFundHoldings: (fundTicker: string) => Promise<void>;
+}
+
+function Shell({
+  user,
+  data,
+  gbpData,
+  baseData,
+  handleChange,
+  livePrices,
+  priceAges,
+  fxRates,
+  fundHoldings,
+  isAdmin,
+  syncState,
+  degraded,
+  conflict,
+  newestPriceAsOf,
+  livePricesLoading,
+  livePricesUpdatedAt,
+  refreshLivePrices,
+  loadData,
+  currency,
+  currencyContextValue,
+  handleCurrencyChange,
+  handleImport,
+  handleUpdateFundHoldings,
+  handleDeleteFundHoldings,
+}: ShellProps) {
+  const formScreen = isFormRoute(useLocation().pathname);
+
+  return (
+    <CurrencyContext.Provider value={currencyContextValue}>
+      <div className="min-h-screen bg-[#02061a]">
+        {!formScreen && (
+          <header
+            className="bg-slate-900/80 border-b border-slate-800 sticky top-0 z-40 backdrop-blur-md"
+            style={{ paddingTop: 'env(safe-area-inset-top)' }}
+          >
+            <div className="max-w-5xl mx-auto px-4 h-14 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-2.5 flex-shrink-0">
+                <div className="w-7 h-7 bg-indigo-600 rounded-lg flex items-center justify-center">
+                  <Flame size={14} className="text-white" />
+                </div>
+                <span className="font-semibold text-slate-100 tracking-tight hidden sm:block">ISA & FIRE</span>
+              </div>
+
+              <nav className="hidden sm:flex bg-slate-800 rounded-xl p-1 gap-0.5">
+                <TabLink to="/" icon={<BarChart3 size={14} />} label="Home" />
+                <TabLink to="/holdings" icon={<Layers size={14} />} label="Holdings" />
+                <TabLink to="/fire" icon={<Flame size={14} />} label="Plan" />
+              </nav>
+
+              <div className="flex items-center gap-2">
+                {syncState !== 'idle' && (
+                  <span className="flex items-center gap-1.5 text-xs">
+                    {syncState === 'syncing' && <><Cloud size={13} className="text-indigo-400 animate-pulse" /><span className="text-slate-500 hidden sm:inline">Syncing</span></>}
+                    {syncState === 'error' && <><CloudOff size={13} className="text-red-400" /><span className="text-red-400 hidden sm:inline">Sync error</span></>}
+                  </span>
+                )}
+                {newestPriceAsOf != null && Date.now() - newestPriceAsOf > PRICE_WARN_AGE_MS && (
+                  <span
+                    className="text-xs text-amber-400"
+                    title={`Price feed last updated ${new Date(newestPriceAsOf).toLocaleString()}`}
+                  >
+                    Prices may be stale
+                  </span>
+                )}
+                <button
+                  onClick={() => refreshLivePrices(baseData.current)}
+                  disabled={livePricesLoading}
+                  title={livePricesUpdatedAt ? `Updated ${livePricesUpdatedAt.toLocaleTimeString()}` : 'Refresh live prices'}
+                  className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 border border-slate-700 hover:border-slate-600 rounded-lg px-2.5 py-1.5 hover:bg-slate-800 transition-colors disabled:opacity-40"
+                >
+                  <RefreshCw size={13} className={livePricesLoading ? 'animate-spin' : ''} />
+                  <span className="hidden sm:inline tabular-nums">
+                    {livePricesUpdatedAt ? livePricesUpdatedAt.toLocaleTimeString() : 'Prices'}
+                  </span>
+                </button>
+                <UserMenu
+                  email={user.email ?? ''}
+                  currency={currency}
+                  currencies={SUPPORTED_CURRENCIES}
+                  onCurrencyChange={handleCurrencyChange}
+                  onExport={() => exportData(baseData.current)}
+                  onImport={handleImport}
+                  onSignOut={() => supabase.auth.signOut()}
+                  isAdmin={isAdmin}
+                />
+              </div>
+            </div>
+          </header>
+        )}
+
+        {!formScreen && (
+          <nav className="sm:hidden fixed bottom-0 inset-x-0 z-40 bg-slate-900/90 border-t border-slate-800 backdrop-blur-md flex" style={{paddingBottom: 'env(safe-area-inset-bottom)'}}>
+            <BottomTabLink to="/" icon={<BarChart3 size={20} />} label="Home" />
+            <BottomTabLink to="/holdings" icon={<Layers size={20} />} label="Holdings" />
+            <BottomTabLink to="/fire" icon={<Flame size={20} />} label="Plan" />
+          </nav>
+        )}
+
+        {!formScreen && degraded && (
+          <div className="max-w-5xl mx-auto px-4 pt-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 bg-amber-900/30 border border-amber-800/40 rounded-xl px-4 py-2.5">
+              <span className="text-sm text-amber-300">
+                Couldn't reach the server — showing your last synced data (read-only).
+              </span>
+              <button
+                onClick={() => loadData(user)}
+                className="text-sm font-medium text-amber-200 border border-amber-700/60 rounded-lg px-3 py-1 hover:bg-amber-900/40 transition-colors"
+              >
+                Retry
+              </button>
+            </div>
+          </div>
+        )}
+
+        {!formScreen && conflict && (
+          <div className="max-w-5xl mx-auto px-4 pt-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 bg-red-900/30 border border-red-800/40 rounded-xl px-4 py-2.5">
+              <span className="text-sm text-red-300">
+                This portfolio was changed on another device — your edits here aren't being saved.
+              </span>
+              <button
+                onClick={() => loadData(user)}
+                className="text-sm font-medium text-red-200 border border-red-700/60 rounded-lg px-3 py-1 hover:bg-red-900/40 transition-colors"
+              >
+                Reload
+              </button>
+            </div>
+          </div>
+        )}
+
+        <main
+          className={`max-w-5xl mx-auto px-4 py-6 ${formScreen ? 'pb-0' : 'pb-24 sm:pb-8'}`}
+          style={formScreen ? undefined : {paddingBottom: 'calc(6rem + env(safe-area-inset-bottom))'}}
+        >
+          <Routes>
+            <Route path="/" element={<ISATracker data={data} rawData={baseData.current} onChange={handleChange} livePrices={livePrices} priceAges={priceAges} fxRates={fxRates} />} />
+            <Route path="/holdings/*" element={<ISATracker data={data} rawData={baseData.current} onChange={handleChange} livePrices={livePrices} priceAges={priceAges} fxRates={fxRates} />} />
+            <Route path="/lookthrough" element={<LookThrough data={data} fundHoldings={fundHoldings} />} />
+            {isAdmin && <Route path="/funds" element={<FundManager fundHoldings={fundHoldings} onUpdateFundHoldings={handleUpdateFundHoldings} onDeleteFundHoldings={handleDeleteFundHoldings} />} />}
+            <Route path="/fire/*" element={<FIRECalculator data={gbpData} rawData={baseData.current} onChange={handleChange} />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </main>
+      </div>
+    </CurrencyContext.Provider>
   );
 }
 
