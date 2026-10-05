@@ -40,3 +40,9 @@ Implemented the Holdings list route in the `mobile-ux` worktree.
 - `npm test`: 343 tests passed across 34 files.
 - `npm run build`: passed.
 - IDE lint diagnostics: none for `HoldingsList.tsx`.
+
+## Build follow-up
+
+- Removed the unused `tone` prop from `IncomeSummaryCard` and both call sites.
+- Confirmed `npm test` passed all 343 tests across 34 files.
+- Confirmed `npm run build` passed.

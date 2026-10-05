@@ -118,7 +118,6 @@ export default function HoldingsList({ data, rawData, onChange, fxRates = {} }: 
               pensionValue={pensionValue * withdrawalRate}
               fmt={fmt}
               fmtShort={fmtShort}
-              tone="indigo"
             />
             <IncomeSummaryCard
               label="8% return — estimated annual earnings"
@@ -128,7 +127,6 @@ export default function HoldingsList({ data, rawData, onChange, fxRates = {} }: 
               pensionValue={pensionValue * 0.08}
               fmt={fmt}
               fmtShort={fmtShort}
-              tone="indigo"
             />
           </div>
           <IncomeCard data={data} fxRates={fxRates} />
@@ -177,7 +175,7 @@ function FilterChips({ label, values, selected, onSelect }: {
   );
 }
 
-function IncomeSummaryCard({ label, value, sub, accessibleValue, pensionValue, fmt, fmtShort, tone }: {
+function IncomeSummaryCard({ label, value, sub, accessibleValue, pensionValue, fmt, fmtShort }: {
   label: string;
   value: number;
   sub: string;
@@ -185,7 +183,6 @@ function IncomeSummaryCard({ label, value, sub, accessibleValue, pensionValue, f
   pensionValue: number;
   fmt: (value: number) => string;
   fmtShort: (value: number) => string;
-  tone: 'indigo';
 }) {
   return (
     <div className="bg-slate-800/60 rounded-xl border border-slate-700/50 p-5">
