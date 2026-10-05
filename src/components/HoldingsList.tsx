@@ -88,9 +88,11 @@ export default function HoldingsList({ data, rawData, onChange, fxRates = {} }: 
                 </div>
                 <div className="text-right shrink-0">
                   <div className="font-semibold text-slate-100 tabular-nums">{fmtShort(value)}</div>
-                  <div className={`text-xs mt-0.5 tabular-nums ${gain >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                    {gain >= 0 ? '+' : ''}{fmtShort(gain)}
-                  </div>
+                  {cost > 0 && (
+                    <div className={`text-xs mt-0.5 tabular-nums ${gain >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                      {gain >= 0 ? '+' : ''}{fmtShort(gain)}
+                    </div>
+                  )}
                 </div>
               </div>
             </Link>
@@ -116,7 +118,7 @@ export default function HoldingsList({ data, rawData, onChange, fxRates = {} }: 
               pensionValue={pensionValue * withdrawalRate}
               fmt={fmt}
               fmtShort={fmtShort}
-              tone="green"
+              tone="indigo"
             />
             <IncomeSummaryCard
               label="8% return — estimated annual earnings"
@@ -183,11 +185,11 @@ function IncomeSummaryCard({ label, value, sub, accessibleValue, pensionValue, f
   pensionValue: number;
   fmt: (value: number) => string;
   fmtShort: (value: number) => string;
-  tone: 'green' | 'indigo';
+  tone: 'indigo';
 }) {
   return (
     <div className="bg-slate-800/60 rounded-xl border border-slate-700/50 p-5">
-      <p className={`text-xs font-medium uppercase tracking-wider ${tone === 'green' ? 'text-green-400' : 'text-indigo-400'}`}>{label}</p>
+      <p className="text-xs font-medium text-indigo-400 uppercase tracking-wider">{label}</p>
       <p className="text-2xl sm:text-3xl font-bold text-slate-50 mt-2 tabular-nums">
         <span className="sm:hidden">{fmtShort(value)}</span>
         <span className="hidden sm:inline">{fmt(value)}</span>

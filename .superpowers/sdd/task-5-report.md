@@ -28,3 +28,15 @@ Implemented the Holdings list route in the `mobile-ux` worktree.
 ## Follow-up fix
 
 - Removed the unused `ISATracker` import from `src/App.tsx`; `src/components/ISATracker.tsx` remains on disk for Task 6.
+
+## Review fixes
+
+- Account-row gains are now hidden when the provider has no positive cost basis.
+- The SWR summary label now uses the indigo semantic treatment, matching the estimated-earnings card.
+- No `vibrate`, owner constants, or account-type constants were moved from `ISATracker`.
+
+## Covering-test results
+
+- `npm test`: 343 tests passed across 34 files.
+- `npm run build`: passed.
+- IDE lint diagnostics: none for `HoldingsList.tsx`.
