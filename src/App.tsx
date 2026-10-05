@@ -511,7 +511,7 @@ function Shell({
         )}
 
         {degraded && (
-          <div className="max-w-5xl mx-auto px-4 pt-4">
+          <div className="max-w-5xl mx-auto px-4 pt-4 relative z-[60]">
             <div className="flex flex-wrap items-center justify-between gap-3 bg-amber-900/30 border border-amber-800/40 rounded-xl px-4 py-2.5">
               <span className="text-sm text-amber-300">
                 Couldn't reach the server — showing your last synced data (read-only).
@@ -527,7 +527,7 @@ function Shell({
         )}
 
         {conflict && (
-          <div className="max-w-5xl mx-auto px-4 pt-4">
+          <div className="max-w-5xl mx-auto px-4 pt-4 relative z-[60]">
             <div className="flex flex-wrap items-center justify-between gap-3 bg-red-900/30 border border-red-800/40 rounded-xl px-4 py-2.5">
               <span className="text-sm text-red-300">
                 This portfolio was changed on another device — your edits here aren't being saved.
