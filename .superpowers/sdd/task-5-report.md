@@ -24,3 +24,7 @@ Implemented the Holdings list route in the `mobile-ux` worktree.
 
 - `/holdings/new` and `/holdings/:id` intentionally remain future routes for Task 6.
 - The legacy `ISATracker` implementation remains available but is no longer rendered by `/holdings/*`.
+
+## Follow-up fix
+
+- Removed the unused `ISATracker` import from `src/App.tsx`; `src/components/ISATracker.tsx` remains on disk for Task 6.

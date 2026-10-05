@@ -16,7 +16,6 @@ import { applyLivePrices } from './lib/applyLivePrices';
 import { toGbpView } from './lib/gbpView';
 import { formatCurrency, formatCurrencyShort, SUPPORTED_CURRENCIES } from './utils';
 import { CurrencyContext } from './contexts/CurrencyContext';
-import ISATracker from './components/ISATracker';
 import FIRECalculator from './components/FIRECalculator';
 import LookThrough from './components/LookThrough';
 import FundManager from './components/FundManager';
