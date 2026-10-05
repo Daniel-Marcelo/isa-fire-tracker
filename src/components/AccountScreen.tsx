@@ -11,9 +11,10 @@ interface Props {
   rawData: AppData;
   provider: Provider;
   onChange: (data: AppData) => void;
+  pricesStale: boolean;
 }
 
-export default function AccountScreen({ rawData, provider, onChange }: Props) {
+export default function AccountScreen({ rawData, provider, onChange, pricesStale }: Props) {
   const navigate = useNavigate();
   const { fmt } = useCurrency();
   const [showImport, setShowImport] = useState(false);
@@ -24,6 +25,7 @@ export default function AccountScreen({ rawData, provider, onChange }: Props) {
 
   return (
     <div className="space-y-4">
+      {pricesStale && <p className="text-xs text-amber-400">Prices may be stale</p>}
       <button onClick={() => navigate('/holdings')} className="flex items-center gap-2 text-sm text-slate-400 hover:text-slate-200"><ArrowLeft size={16} /> Holdings</button>
       <div className="bg-slate-800/70 rounded-xl border border-slate-700/50 p-4">
         <div className="flex items-start justify-between gap-3">

@@ -2,11 +2,12 @@ import { Link } from 'react-router-dom';
 import type { AppData } from '../types';
 import { ContributionDeltaChip, Spinner, confidenceColor, useFireCalc } from './useFireCalc';
 
-interface Props { data: AppData; rawData: AppData; onChange: (data: AppData) => void; }
+interface Props { data: AppData; rawData: AppData; onChange: (data: AppData) => void; pricesStale: boolean; }
 
-export default function PlanScreen({ data, rawData, onChange }: Props) {
+export default function PlanScreen({ data, rawData, onChange, pricesStale }: Props) {
   const f = useFireCalc(data, rawData, onChange);
   return <div className="space-y-4">
+    {pricesStale && <p className="text-xs text-amber-400">Prices may be stale</p>}
     <div className={`rounded-xl p-5 border bg-slate-800/70 border-green-800/30 ${f.isRecomputing && f.calc ? 'opacity-50' : ''}`}>
       <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
         <div className="flex gap-0.5 bg-slate-900 rounded-lg p-1">{([['earliest', 'Earliest age'], ['fixedAge', 'Chosen age']] as const).map(([m, label]) => <button key={m} onClick={() => f.update({ fireMode: m })} className={`px-3 py-1 rounded-md text-sm font-medium ${f.mode === m ? 'bg-slate-700 text-slate-100' : 'text-slate-500'}`}>{label}</button>)}</div>

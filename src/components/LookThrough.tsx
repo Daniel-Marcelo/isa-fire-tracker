@@ -9,6 +9,7 @@ import ExposureCharts from './ExposureCharts';
 interface Props {
   data: AppData;
   fundHoldings: UploadedFundHoldings[];
+  pricesStale: boolean;
 }
 
 interface ExposureRow {
@@ -54,7 +55,7 @@ function matchesFund(h: { ticker?: string; name: string }, fundId: string) {
   );
 }
 
-export default function LookThrough({ data, fundHoldings }: Props) {
+export default function LookThrough({ data, fundHoldings, pricesStale }: Props) {
   const { fmt } = useCurrency();
   const [sectorFilter, setSectorFilter] = useState<string>('All');
   const [fundsExpanded, setFundsExpanded] = useState(true);
@@ -166,7 +167,9 @@ export default function LookThrough({ data, fundHoldings }: Props) {
   const anyFundHeld = fundTotals.some(f => f.total > 0);
   if (!anyFundHeld && directHoldings.length === 0) {
     return (
-      <div className="bg-slate-800/70 rounded-xl border border-slate-700/50 p-10 text-center">
+      <div className="space-y-4">
+        {pricesStale && <p className="text-xs text-amber-400">Prices may be stale</p>}
+        <div className="bg-slate-800/70 rounded-xl border border-slate-700/50 p-10 text-center">
         <p className="text-lg font-medium text-slate-500">No look-through data yet</p>
         <p className="text-sm text-slate-600 mt-1 max-w-sm mx-auto">
           Upload a fund's holdings breakdown on the Fund Holdings page, or add direct stock holdings, to see your effective exposure.
@@ -178,12 +181,14 @@ export default function LookThrough({ data, fundHoldings }: Props) {
           <Upload className="w-4 h-4" />
           Go to Fund Holdings
         </Link>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="space-y-4">
+      {pricesStale && <p className="text-xs text-amber-400">Prices may be stale</p>}
       {/* Fund Exposure collapsible card */}
       <div className="bg-slate-800/70 rounded-xl border border-slate-700/50 overflow-hidden">
         <button

@@ -446,6 +446,7 @@ function Shell({
   handleDeleteFundHoldings,
 }: ShellProps) {
   const formScreen = isFormRoute(useLocation().pathname);
+  const pricesStale = newestPriceAsOf != null && Date.now() - newestPriceAsOf > PRICE_WARN_AGE_MS;
 
   return (
     <CurrencyContext.Provider value={currencyContextValue}>
@@ -556,7 +557,7 @@ function Shell({
                   rawData={baseData.current}
                   onChange={handleChange}
                   pricesUpdatedAt={livePricesUpdatedAt}
-                  pricesStale={newestPriceAsOf != null && Date.now() - newestPriceAsOf > PRICE_WARN_AGE_MS}
+                  pricesStale={pricesStale}
                   fmt={currencyContextValue.fmt}
                   fmtShort={currencyContextValue.fmtShort}
                 />
@@ -579,18 +580,18 @@ function Shell({
               <HoldingRoute rawData={baseData.current} onChange={handleChange} livePrices={livePrices} priceAges={priceAges} />
             } />
             <Route path="/holdings/:providerId" element={
-              <AccountRoute data={data} rawData={baseData.current} onChange={handleChange} />
+              <AccountRoute data={data} rawData={baseData.current} onChange={handleChange} pricesStale={pricesStale} />
             } />
-            <Route path="/holdings" element={<HoldingsList data={data} rawData={baseData.current} onChange={handleChange} livePrices={livePrices} priceAges={priceAges} fxRates={fxRates} />} />
+            <Route path="/holdings" element={<HoldingsList data={data} rawData={baseData.current} onChange={handleChange} livePrices={livePrices} priceAges={priceAges} fxRates={fxRates} pricesStale={pricesStale} />} />
             <Route
               path="/allowance"
               element={<AllowanceScreen rawData={baseData.current} onChange={handleChange} />}
             />
-            <Route path="/lookthrough" element={<LookThrough data={data} fundHoldings={fundHoldings} />} />
+            <Route path="/lookthrough" element={<LookThrough data={data} fundHoldings={fundHoldings} pricesStale={pricesStale} />} />
             {isAdmin && <Route path="/funds" element={<FundManager fundHoldings={fundHoldings} onUpdateFundHoldings={handleUpdateFundHoldings} onDeleteFundHoldings={handleDeleteFundHoldings} />} />}
             <Route path="/fire/adjust" element={<AdjustPlan data={gbpData} rawData={baseData.current} onChange={handleChange} />} />
             <Route path="/fire/assumptions" element={<AssumptionsForm data={gbpData} rawData={baseData.current} onChange={handleChange} />} />
-            <Route path="/fire" element={<PlanScreen data={gbpData} rawData={baseData.current} onChange={handleChange} />} />
+            <Route path="/fire" element={<PlanScreen data={gbpData} rawData={baseData.current} onChange={handleChange} pricesStale={pricesStale} />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>
@@ -599,10 +600,10 @@ function Shell({
   );
 }
 
-function AccountRoute({ data, rawData, onChange }: { data: AppData; rawData: AppData; onChange: (data: AppData) => void }) {
+function AccountRoute({ data, rawData, onChange, pricesStale }: { data: AppData; rawData: AppData; onChange: (data: AppData) => void; pricesStale: boolean }) {
   const { providerId } = useParams();
   const provider = data.providers.find(p => p.id === providerId);
-  return provider ? <AccountScreen rawData={rawData} provider={provider} onChange={onChange} /> : <Navigate to="/holdings" replace />;
+  return provider ? <AccountScreen rawData={rawData} provider={provider} onChange={onChange} pricesStale={pricesStale} /> : <Navigate to="/holdings" replace />;
 }
 
 function AccountEditRoute({ rawData, onChange }: { rawData: AppData; onChange: (data: AppData) => void }) {

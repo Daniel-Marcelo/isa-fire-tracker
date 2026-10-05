@@ -17,11 +17,12 @@ interface Props {
   livePrices?: Record<string, number>;
   priceAges?: PriceAges;
   fxRates?: FxRates;
+  pricesStale: boolean;
 }
 
 const CHIP_CLASS = 'px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors';
 
-export default function HoldingsList({ data, rawData, onChange, fxRates = {} }: Props) {
+export default function HoldingsList({ data, rawData, onChange, fxRates = {}, pricesStale }: Props) {
   const { fmt, fmtShort } = useCurrency();
   const totalValue = data.providers.reduce(
     (sum, provider) => sum + provider.holdings.reduce((value, holding) => value + (holding.currentValue ?? 0), 0),
@@ -45,6 +46,7 @@ export default function HoldingsList({ data, rawData, onChange, fxRates = {} }: 
 
   return (
     <div className="space-y-4">
+      {pricesStale && <p className="text-xs text-amber-400">Prices may be stale</p>}
       <div className="flex justify-end">
         <Link to="/lookthrough" className="text-sm font-medium text-indigo-400 hover:text-indigo-300 transition-colors">
           Exposure
