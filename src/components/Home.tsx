@@ -4,6 +4,7 @@ import { getCurrentTaxYearContribution } from '../store';
 import { ISA_ANNUAL_ALLOWANCE } from '../utils';
 import { portfolioSummary } from '../lib/portfolioSummary';
 import { useFireCalc } from './useFireCalc';
+import IncomeSummaryCard from './IncomeSummaryCard';
 
 interface Props {
   data: AppData;
@@ -27,6 +28,7 @@ export default function Home({ data, gbpData, rawData, onChange, pricesUpdatedAt
       ? 'bg-amber-400'
       : 'bg-indigo-500';
   const { headlineAge, isRecomputing, calc } = useFireCalc(gbpData, rawData, onChange);
+  const withdrawalRate = (data.fireSettings?.withdrawalRate ?? 4) / 100;
 
   return (
     <div className="space-y-4">
@@ -57,12 +59,35 @@ export default function Home({ data, gbpData, rawData, onChange, pricesUpdatedAt
         {pricesStale && <p className="text-amber-400">Prices may be stale</p>}
       </div>
 
+      {summary.total > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <IncomeSummaryCard
+            label={`${(withdrawalRate * 100).toFixed(1)}% SWR — safe annual withdrawal`}
+            value={summary.total * withdrawalRate}
+            sub="Withdraw this each year indefinitely (Trinity Study)"
+            accessibleValue={summary.accessible * withdrawalRate}
+            pensionValue={summary.pension * withdrawalRate}
+            fmt={fmt}
+            fmtShort={fmtShort}
+          />
+          <IncomeSummaryCard
+            label="8% return — estimated annual earnings"
+            value={summary.total * 0.08}
+            sub={`At 8% growth rate · ${fmtShort(summary.total * 0.08 / 12)}/mo`}
+            accessibleValue={summary.accessible * 0.08}
+            pensionValue={summary.pension * 0.08}
+            fmt={fmt}
+            fmtShort={fmtShort}
+          />
+        </div>
+      )}
+
       <div className="grid grid-cols-2 gap-3">
         {(summary.hasAccounts || data.fireSettings) && (
           <Link to="/fire" className="bg-slate-800/70 rounded-xl border border-slate-700/50 p-4 block">
             <p className="text-sm text-slate-400">FIRE age</p>
             <p className="text-2xl font-bold text-slate-50 tabular-nums mt-2">
-              <span className={isRecomputing && calc ? 'opacity-50' : ''}>{headlineAge ?? '—'}</span>
+              <span className={isRecomputing && calc ? 'opacity-50' : ''}>{headlineAge == null ? '—' : headlineAge.toFixed(1)}</span>
             </p>
           </Link>
         )}
