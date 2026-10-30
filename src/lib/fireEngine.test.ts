@@ -1,12 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import type { FireSettings, Provider } from '../types';
 import {
+  chosenRetirementAgeOf,
   drawdownParamsFrom,
   monthlyWithdrawals,
   planToAgeOf,
   potsFromAccessible,
   potsFromProviders,
   targetConfidenceOf,
+  withdrawalRateOf,
   type DrawdownParams,
 } from './fireEngine';
 
@@ -160,5 +162,21 @@ describe('clamped settings accessors', () => {
     expect(targetConfidenceOf(makeSettings())).toBe(90);
     expect(targetConfidenceOf(makeSettings({ targetConfidence: 0 }))).toBe(50);
     expect(targetConfidenceOf(makeSettings({ targetConfidence: 100 }))).toBe(99);
+  });
+});
+
+describe('withdrawalRateOf', () => {
+  it('clamps into [2, 6] and defaults to 3.5', () => {
+    expect(withdrawalRateOf(makeSettings())).toBe(3.5);
+    expect(withdrawalRateOf(makeSettings({ withdrawalRate: 0 }))).toBe(2);
+    expect(withdrawalRateOf(makeSettings({ withdrawalRate: 9 }))).toBe(6);
+  });
+});
+
+describe('chosenRetirementAgeOf', () => {
+  it('clamps a stale pinned age into [currentAge, planToAge]', () => {
+    expect(chosenRetirementAgeOf(makeSettings({ currentAge: 30, targetRetirementAge: 50 }))).toBe(50);
+    expect(chosenRetirementAgeOf(makeSettings({ currentAge: 60, targetRetirementAge: 55 }))).toBe(60);
+    expect(chosenRetirementAgeOf(makeSettings({ targetRetirementAge: 120, planToAge: 95 }))).toBe(95);
   });
 });

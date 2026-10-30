@@ -117,6 +117,16 @@ export function targetConfidenceOf(settings: FireSettings): number {
   return clamp(settings.targetConfidence ?? 90, 50, 99);
 }
 
+/** Safe withdrawal rate in %, clamped so a cleared field can't divide by zero. */
+export function withdrawalRateOf(settings: FireSettings): number {
+  return clamp(settings.withdrawalRate ?? 3.5, 2, 6);
+}
+
+/** Pinned retirement age, clamped; stale v1 values can sit below currentAge or past planToAge. */
+export function chosenRetirementAgeOf(settings: FireSettings): number {
+  return clamp(settings.targetRetirementAge ?? 55, settings.currentAge, planToAgeOf(settings));
+}
+
 /**
  * Pot outflows for one retired month. Spends cash, then ISA, then GIA (grossed
  * up for CGT), then — only once pension is accessible — the pension (grossed up
