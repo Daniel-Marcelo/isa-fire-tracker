@@ -24,7 +24,7 @@ export default function PlanScreen({ data, rawData, onChange, pricesStale }: Pro
         <p className="text-xs text-slate-600 mt-0.5">{f.degenerateHorizon ? 'Plan-to age must be beyond your current age' : f.retireAge != null ? `Earliest age your money lasts to ${f.planTo} at a steady ~${realRate}% real return` : `Not reachable by ${f.planTo} at a steady ~${realRate}% real return`}</p>
       </div> : <div className="flex flex-wrap gap-6">
         <div><p className="text-xs text-slate-500 uppercase">Retire at {f.chosenAge}</p><p className="text-3xl font-bold text-slate-50 tabular-nums">{f.result.depletedAge == null ? `Lasts to ${f.planTo}` : `Runs out at ${f.result.depletedAge}`}</p><p className="text-xs text-slate-600">at a steady ~{realRate}% real return</p></div>
-        <div><p className="text-xs text-slate-500 uppercase">Required saving</p><p className="text-3xl font-bold text-slate-50 tabular-nums">{f.requiredSaving == null ? '—' : `${f.fmt(f.requiredSaving)}/mo`}</p><p className="text-xs text-slate-600">{f.requiredSaving == null ? `Saving alone can't make ${f.chosenAge} work — push the age out or trim spending.` : f.requiredSaving === 0 ? 'Your current pots already last — no further saving needed.' : `total monthly saving for your money to last to ${f.planTo}`}</p>{f.requiredSaving != null && <ContributionDeltaChip current={f.currentTotalContribution} required={f.requiredSaving} fmt={f.fmt} />}</div>
+        <div><p className="text-xs text-slate-500 uppercase">Required saving</p><p className="text-3xl font-bold text-slate-50 tabular-nums">{f.requiredSaving == null ? '—' : `${f.fmt(f.requiredSaving)}/mo`}</p><p className="text-xs text-slate-600">{f.requiredSaving == null ? `Saving alone can't make ${f.chosenAge} work at your current ISA/pension split — push the age out or trim spending.` : f.requiredSaving === 0 ? 'Your current pots already last — no further saving needed.' : `total monthly saving, at your current ISA/pension split, for your money to last to ${f.planTo}`}</p>{f.requiredSaving != null && <ContributionDeltaChip current={f.currentTotalContribution} required={f.requiredSaving} fmt={f.fmt} />}</div>
       </div>}
     </div>
 
@@ -48,7 +48,7 @@ export default function PlanScreen({ data, rawData, onChange, pricesStale }: Pro
           <div>
             <p className="text-xs text-slate-500 uppercase">Historical</p>
             <p className={`text-3xl font-bold tabular-nums ${confidenceColor(bt && bt.cycles > 0 ? bt.successRate : null)}`}>{bt && bt.cycles > 0 ? pct(bt.successRate) : '—'}</p>
-            {bt && bt.cycles > 0 && <p className="text-xs text-slate-600">lasted in {bt.cycles - bt.failedStartYears.length} of {bt.cycles} start years, {bt.firstYear}–{bt.lastYear} (US stocks)</p>}
+            {bt && bt.cycles > 0 && <p className="text-xs text-slate-600">lasted in {bt.cycles - bt.failedStartYears.length} of {bt.cycles} start years, {bt.firstYear}–{bt.lastYear} (US stocks). Later start years wrap back to {bt.firstYear}.</p>}
             {bt && bt.failedStartYears.length > 0 && <p className="text-xs text-slate-400 mt-1">Ran out if this plan had begun in {formatYearRanges(bt.failedStartYears)}</p>}
           </div>
           <div>
@@ -57,7 +57,7 @@ export default function PlanScreen({ data, rawData, onChange, pricesStale }: Pro
             {f.mc && f.confidence != null && <p className="text-xs text-slate-600">lasted in {pct(f.confidence)} of {f.mc.runs} random markets at {f.s.returnVolatility ?? 15}% volatility</p>}
           </div>
         </div>
-        {f.sensitivity && <div className="flex flex-wrap gap-2 mt-4"><span className={chip}>Simulated, retire 1 yr later → {pct(f.sensitivity.later)}</span><span className={chip}>Simulated, spend £2k/yr less → {pct(f.sensitivity.lessSpend)}</span></div>}
+        {f.sensitivity && <div className="flex flex-wrap gap-2 mt-4">{f.retireAge != null && f.retireAge + 1 < f.planTo && <span className={chip}>Simulated, retire 1 yr later → {pct(f.sensitivity.later)}</span>}<span className={chip}>Simulated, spend £2k/yr less → {pct(f.sensitivity.lessSpend)}</span></div>}
         {f.calcError && <p className="text-[10px] text-slate-600 mt-2">computed on this device</p>}
         {f.mc && f.mc.bands.length > 1 && <div className="mt-4"><p className="text-xs text-slate-500 mb-2">Simulated wealth: 10th percentile, median, 90th percentile</p>{f.marketChart}</div>}
       </>}

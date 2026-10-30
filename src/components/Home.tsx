@@ -28,7 +28,8 @@ export default function Home({ data, gbpData, rawData, onChange, pricesUpdatedAt
     : allowancePct >= 90
       ? 'bg-amber-400'
       : 'bg-indigo-500';
-  const { retireAge } = usePlan(gbpData, rawData, onChange);
+  const plan = usePlan(gbpData, rawData, onChange);
+  const { retireAge } = plan;
   const withdrawalRate = withdrawalRateOf(data.fireSettings) / 100;
 
   return (
@@ -86,10 +87,13 @@ export default function Home({ data, gbpData, rawData, onChange, pricesUpdatedAt
       <div className="grid grid-cols-2 gap-3">
         {(summary.hasAccounts || data.fireSettings) && (
           <Link to="/fire" className="bg-slate-800/70 rounded-xl border border-slate-700/50 p-4 block">
-            <p className="text-sm text-slate-400">FIRE age</p>
+            <p className="text-sm text-slate-400">{plan.mode === 'fixedAge' ? 'Retire at' : 'FIRE age'}</p>
             <p className="text-2xl font-bold text-slate-50 tabular-nums mt-2">
               {retireAge == null ? '—' : retireAge}
             </p>
+            {plan.mode === 'fixedAge' && plan.result.depletedAge != null && (
+              <p className="text-xs text-slate-500 mt-1">runs out at {plan.result.depletedAge}</p>
+            )}
           </Link>
         )}
 

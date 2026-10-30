@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { FireSettings } from '../types';
-import { formatYearRanges, runBacktest } from './historicalBacktest';
+import { formatYearRanges, monthlyGrowthFactors, runBacktest } from './historicalBacktest';
 import { runMonteCarlo } from './monteCarlo';
 import { potsFromAccessible } from './fireEngine';
 import { HISTORICAL_REAL_RETURNS } from './historicalReturns';
@@ -23,6 +23,17 @@ function makeSettings(overrides: Partial<FireSettings> = {}): FireSettings {
 }
 
 const flat = [2000, 2001, 2002].map(year => ({ year, real: 0.05 }));
+
+describe('monthlyGrowthFactors', () => {
+  it('compounds at the expected real return across a full cycle', () => {
+    const real = 0.04;
+    const series = [{ year: 2000, real: -0.2 }, { year: 2001, real: 0.5 }, { year: 2002, real: 0 }];
+    const monthly = monthlyGrowthFactors(real, series);
+    const annual = series.map((_, i) => monthly[i] ** 12);
+    const compound = Math.exp(annual.reduce((s, f) => s + Math.log(f), 0) / annual.length);
+    expect(compound).toBeCloseTo(1 + real, 10);
+  });
+});
 
 describe('runBacktest', () => {
   it('a flat history is the steady-return plan: matches σ=0 Monte Carlo', () => {
@@ -54,7 +65,7 @@ describe('runBacktest', () => {
       currentAge: 60, planToAge: 82,
       expectedAnnualReturn: 8, inflationRate: 3,
       monthlyContribution: 0, monthlyPensionContribution: 0,
-      annualExpensesInRetirement: 31_000,
+      annualExpensesInRetirement: 45_000,
     });
     const r = runBacktest(s, potsFromAccessible(600_000, 0), 60, { returns: swing });
     expect(r.failedStartYears).toContain(2000);

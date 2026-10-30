@@ -21,7 +21,7 @@ export function useStressTest(settings: FireSettings, pots: FirePots, retireAge:
       const fallback = () => setTimeout(() => {
         if (id !== reqIdRef.current) return;
         try { setCalc(runFireCalc(req)); setCalcError(true); }
-        catch { setCalcError(true); }
+        catch { setCalc(null); setCalcError(true); }
         finally { setIsRecomputing(false); }
       }, 0);
       try {

@@ -13,10 +13,25 @@ export interface BacktestResult {
 }
 
 /**
+ * Monthly equity growth factors for one historical series. Deviations are applied
+ * in log space, so the compound average of the series equals the user's real
+ * return: history sets the order and size of good and bad years, not the
+ * long-run growth. Floored so an extreme shock can't produce a negative factor.
+ */
+export function monthlyGrowthFactors(realAnnual: number, returns: HistoricalYear[]): number[] {
+  const n = returns.length;
+  if (n === 0) return [];
+  const logUser = Math.log(Math.max(1 + realAnnual, 0.01));
+  const logs = returns.map(r => Math.log(Math.max(1 + r.real, 0.01)));
+  const meanLog = logs.reduce((s, x) => s + x, 0) / n;
+  return logs.map(lh => Math.exp((logUser + lh - meanLog) / 12));
+}
+
+/**
  * Replay the plan from every historical start year. Each year keeps the settings'
- * expected real return and adds that year's deviation from the dataset mean, so
- * history sets the order and size of good and bad years while the long-run
- * average stays the user's assumption. Windows that run past the last year wrap
+ * expected compound real return and adds that year's deviation from the dataset,
+ * so history sets the order and size of good and bad years while the long-run
+ * growth stays the user's assumption. Windows that run past the last year wrap
  * to the first, so every start year gets a full horizon.
  */
 export function runBacktest(
@@ -32,9 +47,7 @@ export function runBacktest(
     return { successRate: 1, cycles: 0, failedStartYears: [], firstYear: null, lastYear: null };
   }
 
-  const mean = returns.reduce((s, r) => s + r.real, 0) / n;
-  // Floor at −99% so an extreme shock on a low assumption can't produce a negative factor.
-  const monthly = returns.map(r => Math.pow(Math.max(1 + setup.realAnnual + r.real - mean, 0.01), 1 / 12));
+  const monthly = monthlyGrowthFactors(setup.realAnnual, returns);
 
   const failedStartYears: number[] = [];
   for (let k = 0; k < n; k++) {

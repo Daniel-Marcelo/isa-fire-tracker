@@ -122,9 +122,11 @@ export function withdrawalRateOf(settings: FireSettings): number {
   return clamp(settings.withdrawalRate ?? 3.5, 2, 6);
 }
 
-/** Pinned retirement age, clamped; stale v1 values can sit below currentAge or past planToAge. */
+/** Pinned retirement age, clamped. planToAge itself is a zero-length retirement. */
 export function chosenRetirementAgeOf(settings: FireSettings): number {
-  return clamp(settings.targetRetirementAge ?? 55, settings.currentAge, planToAgeOf(settings));
+  const planTo = planToAgeOf(settings);
+  const latest = Math.max(settings.currentAge, planTo - 1);
+  return clamp(settings.targetRetirementAge ?? 55, settings.currentAge, latest);
 }
 
 /**

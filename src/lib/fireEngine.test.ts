@@ -174,9 +174,9 @@ describe('withdrawalRateOf', () => {
 });
 
 describe('chosenRetirementAgeOf', () => {
-  it('clamps a stale pinned age into [currentAge, planToAge]', () => {
+  it('clamps a stale pinned age into [currentAge, planToAge - 1]', () => {
     expect(chosenRetirementAgeOf(makeSettings({ currentAge: 30, targetRetirementAge: 50 }))).toBe(50);
     expect(chosenRetirementAgeOf(makeSettings({ currentAge: 60, targetRetirementAge: 55 }))).toBe(60);
-    expect(chosenRetirementAgeOf(makeSettings({ targetRetirementAge: 120, planToAge: 95 }))).toBe(95);
+    expect(chosenRetirementAgeOf(makeSettings({ targetRetirementAge: 120, planToAge: 95 }))).toBe(94);
   });
 });

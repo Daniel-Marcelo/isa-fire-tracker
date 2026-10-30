@@ -37,7 +37,9 @@ export function runFireCalc({ id, settings, pots, retireAge }: FireCalcRequest):
 
   const mc = runMonteCarlo(settings, pots, retireAge, { runs: MC_RUNS });
   const backtest = runBacktest(settings, pots, retireAge);
-  const later = runMonteCarlo(settings, pots, Math.min(retireAge + 1, planTo - 1), { runs: MC_RUNS });
+  const later = retireAge + 1 < planTo
+    ? runMonteCarlo(settings, pots, retireAge + 1, { runs: MC_RUNS })
+    : mc;
   const lessSpend = runMonteCarlo(
     { ...settings, annualExpensesInRetirement: Math.max(settings.annualExpensesInRetirement - 2000, 0) },
     pots, retireAge, { runs: MC_RUNS },

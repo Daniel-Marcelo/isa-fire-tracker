@@ -103,6 +103,22 @@ describe('runMonteCarlo', () => {
     expect(result.successRate).toBe(1);
   });
 
+  it('the median path compounds at the expected real return', () => {
+    const s = makeSettings({
+      monthlyContribution: 0,
+      monthlyPensionContribution: 0,
+      annualExpensesInRetirement: 0,
+      returnVolatility: 15,
+    });
+    const start = 100_000;
+    const years = 10;
+    const result = runMonteCarlo(s, { cash: 0, isa: start, gia: 0, pension: 0 }, 40 + years, { runs: 4000, endAge: 40 + years });
+    const real = 1.07 / 1.03 - 1;
+    const median = result.bands[result.bands.length - 1].p50;
+    expect(median).toBeGreaterThan(start * (1 + real) ** years * 0.95);
+    expect(median).toBeLessThan(start * (1 + real) ** years * 1.05);
+  });
+
   it('band ages start at currentAge and are yearly', () => {
     const s = makeSettings({ currentAge: 40, returnVolatility: 10 });
     const result = runMonteCarlo(s, potsFromAccessible(100_000, 50_000), 55, { runs: 30 });

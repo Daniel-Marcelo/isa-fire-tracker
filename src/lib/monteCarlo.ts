@@ -57,9 +57,9 @@ export function runMonteCarlo(
 
   const sigmaA = Math.max(settings.returnVolatility ?? 15, 0) / 100;
   const sigmaM = sigmaA / Math.sqrt(12);
-  // Median-preserving drift with the lognormal -σ²/2 correction; at σ=0 this is
-  // exactly the deterministic monthly growth factor.
-  const muM = Math.log(1 + setup.realAnnual) / 12 - (sigmaM * sigmaM) / 2;
+  // Median-preserving drift: the median path compounds at the user's real return,
+  // the same rate as the steady plan. The mean outcome is higher by about σ²/2.
+  const muM = Math.log(Math.max(1 + setup.realAnnual, 0.01)) / 12;
 
   const rng = mulberry32(seed);
   // Box–Muller produces pairs; keep the spare to halve rng calls.
