@@ -3,6 +3,7 @@ import type { AppData } from '../types';
 import { getCurrentTaxYearContribution } from '../store';
 import { ISA_ANNUAL_ALLOWANCE } from '../utils';
 import { portfolioSummary } from '../lib/portfolioSummary';
+import { withdrawalRateOf } from '../lib/fireEngine';
 import { usePlan } from './usePlan';
 import IncomeSummaryCard from './IncomeSummaryCard';
 
@@ -28,7 +29,7 @@ export default function Home({ data, gbpData, rawData, onChange, pricesUpdatedAt
       ? 'bg-amber-400'
       : 'bg-indigo-500';
   const { retireAge } = usePlan(gbpData, rawData, onChange);
-  const withdrawalRate = (data.fireSettings?.withdrawalRate ?? 4) / 100;
+  const withdrawalRate = withdrawalRateOf(data.fireSettings) / 100;
 
   return (
     <div className="space-y-4">
@@ -87,7 +88,7 @@ export default function Home({ data, gbpData, rawData, onChange, pricesUpdatedAt
           <Link to="/fire" className="bg-slate-800/70 rounded-xl border border-slate-700/50 p-4 block">
             <p className="text-sm text-slate-400">FIRE age</p>
             <p className="text-2xl font-bold text-slate-50 tabular-nums mt-2">
-              {retireAge == null ? '—' : retireAge.toFixed(1)}
+              {retireAge == null ? '—' : retireAge}
             </p>
           </Link>
         )}

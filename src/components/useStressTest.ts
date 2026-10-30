@@ -28,7 +28,7 @@ export function useStressTest(settings: FireSettings, pots: FirePots, retireAge:
         const w = new Worker(new URL('../lib/fireWorker.ts', import.meta.url), { type: 'module' });
         workerRef.current = w;
         w.onmessage = (e: MessageEvent<FireCalcResult>) => {
-          if (e.data.id !== id || settled) return;
+          if (e.data.id !== reqIdRef.current || settled) return;
           settled = true; clearTimeout(watchdog); setCalc(e.data); setCalcError(false); setIsRecomputing(false);
         };
         w.onerror = () => { if (settled) return; settled = true; clearTimeout(watchdog); w.terminate(); fallback(); };
@@ -36,7 +36,7 @@ export function useStressTest(settings: FireSettings, pots: FirePots, retireAge:
         w.postMessage(req);
       } catch { fallback(); }
     }, 300);
-    return () => { clearTimeout(t); clearTimeout(watchdog); };
+    return () => { reqIdRef.current++; clearTimeout(t); clearTimeout(watchdog); };
   }, [settings, pots, retireAge]);
   return { calc, isRecomputing, calcError, awaitingFirst: calc == null };
 }

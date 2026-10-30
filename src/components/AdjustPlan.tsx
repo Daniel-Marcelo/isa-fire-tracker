@@ -9,7 +9,7 @@ export default function AdjustPlan({ data, rawData, onChange }: { data: AppData;
   const navigate = useNavigate();
   const f = usePlan(data, rawData, onChange);
   const outcome = f.mode === 'earliest'
-    ? (f.retireAge == null ? '—' : f.retireAge.toFixed(1))
+    ? (f.retireAge == null ? '—' : String(f.retireAge))
     : (f.result.depletedAge == null ? `lasts to ${f.planTo}` : `runs out at ${f.result.depletedAge}`);
   return <FormScreen title="Adjust" commitLabel="Done" onCancel={() => navigate('/fire')} onCommit={() => navigate('/fire')}>
     <div className="space-y-5">
@@ -17,7 +17,7 @@ export default function AdjustPlan({ data, rawData, onChange }: { data: AppData;
       <NumberInput label="Spending per year" value={f.s.annualExpensesInRetirement} min={0} step={1000} prefix="£" onChange={v => f.update({ annualExpensesInRetirement: v })} />
       <NumberInput label="Monthly ISA contribution" value={f.s.monthlyContribution} min={0} step={50} prefix="£" onChange={v => f.update({ monthlyContribution: v })} />
       <NumberInput label="Monthly pension contribution" value={f.s.monthlyPensionContribution ?? 0} min={0} step={50} prefix="£" onChange={v => f.update({ monthlyPensionContribution: v })} />
-      <NumberInput label="Retire at age" value={f.s.targetRetirementAge ?? 55} min={f.s.currentAge} max={f.planTo} hint="Used in Chosen age mode" onChange={v => f.update({ targetRetirementAge: v })} />
+      <NumberInput label="Retire at age" value={f.s.targetRetirementAge ?? 55} min={f.s.currentAge} max={f.planTo - 1} hint="Used in Chosen age mode" onChange={v => f.update({ targetRetirementAge: v })} />
       <Link to="/fire/assumptions" className="block text-sm text-indigo-400">More assumptions</Link>
     </div>
   </FormScreen>;

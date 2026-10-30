@@ -65,7 +65,7 @@ function Delta({ v, breakdown }: { v: number; breakdown: { from: number; interes
 export function useFireCalc(data: AppData, rawData: AppData, onChange: (data: AppData) => void) {
   const plan = usePlan(data, rawData, onChange);
   const { ds, result, retireAge, statePensionOn, statePensionAge, pensionAccessAge } = plan;
-  const stress = useStressTest(plan.s, plan.pots, retireAge);
+  const stress = useStressTest(plan.ds, plan.pots, retireAge);
   const fmt = useCallback((v: number) => formatCurrency(v, 'GBP'), []);
   const fmtShort = useCallback((v: number) => formatCurrencyShort(v, 'GBP'), []);
   const [activeTab, setActiveTab] = useState<'split' | 'combined'>('split');
@@ -78,17 +78,17 @@ export function useFireCalc(data: AppData, rawData: AppData, onChange: (data: Ap
   const curveChart = useMemo(() => (
     <ResponsiveContainer width="100%" height={220}><ComposedChart data={curve} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
       <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" /><XAxis dataKey="age" type="number" domain={['dataMin', 'dataMax']} tick={{ fontSize: 11, fill: '#64748b' }} tickCount={10} /><YAxis domain={[0, 100]} tick={{ fontSize: 11, fill: '#64748b' }} tickFormatter={v => `${v}%`} width={45} />
-      <Tooltip {...CHART_TOOLTIP_STYLE} formatter={(v) => [`${v}%`, 'Confidence']} labelFormatter={l => `Retire at ${l}`} />
+      <Tooltip {...CHART_TOOLTIP_STYLE} formatter={(v) => [`${v}%`, 'Simulated chance']} labelFormatter={l => `Retire at ${l}`} />
       <ReferenceLine y={confTarget} stroke="#facc15" strokeDasharray="4 3" strokeOpacity={0.7} label={{ value: `${confTarget}% target`, fill: '#facc15', fontSize: 10, position: 'insideBottomLeft' }} />
       {retireAge != null && <ReferenceLine x={retireAge} stroke="#4ade80" strokeDasharray="4 3" strokeOpacity={0.7} />}
-      <Line type="monotone" dataKey="pct" stroke="#6366f1" strokeWidth={2} dot={false} name="Confidence" />
+      <Line type="monotone" dataKey="pct" stroke="#6366f1" strokeWidth={2} dot={false} name="Simulated chance" />
     </ComposedChart></ResponsiveContainer>
   ), [curve, confTarget, retireAge]);
   const marketChart = useMemo(() => (
     <ResponsiveContainer width="100%" height={220}><ComposedChart data={mc?.bands ?? []} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
       <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" /><XAxis dataKey="age" tick={{ fontSize: 11, fill: '#64748b' }} /><YAxis tick={{ fontSize: 11, fill: '#64748b' }} tickFormatter={fmtShort} width={70} />
       <Tooltip {...CHART_TOOLTIP_STYLE} formatter={(v) => fmt(Number(v))} labelFormatter={l => `Age ${l}`} /><ReferenceLine x={pensionAccessAge} stroke="#a78bfa" strokeDasharray="4 3" strokeOpacity={0.7} />
-      {statePensionOn && <ReferenceLine x={statePensionAge} stroke="#2dd4bf" strokeDasharray="4 3" strokeOpacity={0.6} />}{retireAge != null && <ReferenceLine x={Math.round(retireAge)} stroke="#4ade80" strokeDasharray="4 3" strokeOpacity={0.7} />}
+      {statePensionOn && <ReferenceLine x={statePensionAge} stroke="#2dd4bf" strokeDasharray="4 3" strokeOpacity={0.6} />}{retireAge != null && <ReferenceLine x={retireAge} stroke="#4ade80" strokeDasharray="4 3" strokeOpacity={0.7} />}
       <Line type="monotone" dataKey="p90" stroke="#34d399" strokeWidth={1} dot={false} strokeOpacity={0.6} name="90th percentile" /><Line type="monotone" dataKey="p50" stroke="#6366f1" strokeWidth={2} dot={false} name="Median" /><Line type="monotone" dataKey="p10" stroke="#f87171" strokeWidth={1} dot={false} strokeOpacity={0.7} name="10th percentile" /><Legend wrapperStyle={{ fontSize: 12, color: '#94a3b8' }} />
     </ComposedChart></ResponsiveContainer>
   ), [mc, statePensionOn, statePensionAge, retireAge, pensionAccessAge, fmt, fmtShort]);
@@ -96,7 +96,7 @@ export function useFireCalc(data: AppData, rawData: AppData, onChange: (data: Ap
     <ResponsiveContainer width="100%" height={300}><AreaChart data={result.points} margin={{ top: 10, right: 20, left: 0, bottom: 5 }}>
       <defs><linearGradient id="colorAcc" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#6366f1" stopOpacity={0.3} /><stop offset="95%" stopColor="#6366f1" stopOpacity={0} /></linearGradient><linearGradient id="colorPen" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#a78bfa" stopOpacity={0.3} /><stop offset="95%" stopColor="#a78bfa" stopOpacity={0} /></linearGradient><linearGradient id="colorCom" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#4ade80" stopOpacity={0.3} /><stop offset="95%" stopColor="#4ade80" stopOpacity={0} /></linearGradient></defs>
       <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" /><XAxis dataKey="age" tick={{ fontSize: 11, fill: '#64748b' }} label={{ value: 'Age', position: 'insideBottomRight', offset: -5, fontSize: 11, fill: '#64748b' }} /><YAxis tick={{ fontSize: 11, fill: '#64748b' }} tickFormatter={fmtShort} width={70} /><Tooltip {...CHART_TOOLTIP_STYLE} formatter={(v) => fmt(Number(v))} labelFormatter={l => `Age ${l}`} /><Legend wrapperStyle={{ fontSize: 12, color: '#94a3b8' }} />
-      <ReferenceLine x={pensionAccessAge} stroke="#a78bfa" strokeDasharray="4 3" strokeOpacity={0.7} label={{ value: 'Pension', fill: '#a78bfa', fontSize: 10 }} />{statePensionOn && <ReferenceLine x={statePensionAge} stroke="#2dd4bf" strokeDasharray="4 3" strokeOpacity={0.6} label={{ value: 'State pension', fill: '#2dd4bf', fontSize: 10 }} />}{retireAge != null && <ReferenceLine x={Math.round(retireAge)} stroke="#4ade80" strokeDasharray="4 3" strokeOpacity={0.7} label={{ value: 'Retire', fill: '#4ade80', fontSize: 10 }} />}
+      <ReferenceLine x={pensionAccessAge} stroke="#a78bfa" strokeDasharray="4 3" strokeOpacity={0.7} label={{ value: 'Pension', fill: '#a78bfa', fontSize: 10 }} />{statePensionOn && <ReferenceLine x={statePensionAge} stroke="#2dd4bf" strokeDasharray="4 3" strokeOpacity={0.6} label={{ value: 'State pension', fill: '#2dd4bf', fontSize: 10 }} />}{retireAge != null && <ReferenceLine x={retireAge} stroke="#4ade80" strokeDasharray="4 3" strokeOpacity={0.7} label={{ value: 'Retire', fill: '#4ade80', fontSize: 10 }} />}
       {activeTab === 'split' ? <><Area type="monotone" dataKey="accessible" stroke="#6366f1" strokeWidth={2} fill="url(#colorAcc)" name="Cash + ISA + GIA" /><Area type="monotone" dataKey="pension" stroke="#a78bfa" strokeWidth={2} fill="url(#colorPen)" name="Pension (SIPP/Workplace)" /></> : <Area type="monotone" dataKey="combined" stroke="#4ade80" strokeWidth={2} fill="url(#colorCom)" name="Combined" />}
     </AreaChart></ResponsiveContainer>
   ), [result, activeTab, statePensionOn, statePensionAge, retireAge, pensionAccessAge, fmt, fmtShort]);

@@ -20,7 +20,7 @@ export default function PlanScreen({ data, rawData, onChange, pricesStale }: Pro
       <div className="flex gap-0.5 bg-slate-900 rounded-lg p-1 w-fit mb-4">{([['earliest', 'Earliest age'], ['fixedAge', 'Chosen age']] as const).map(([m, label]) => <button key={m} onClick={() => f.update({ fireMode: m })} className={`px-3 py-1 rounded-md text-sm font-medium ${f.mode === m ? 'bg-slate-700 text-slate-100' : 'text-slate-500'}`}>{label}</button>)}</div>
       {f.mode === 'earliest' ? <div>
         <p className="text-xs text-slate-500 font-medium uppercase tracking-wide">FIRE age</p>
-        <p className="text-3xl font-bold text-slate-50 tabular-nums">{f.retireAge != null ? `Age ${f.retireAge.toFixed(1)}` : '—'}</p>
+        <p className="text-3xl font-bold text-slate-50 tabular-nums">{f.retireAge != null ? `Age ${f.retireAge}` : '—'}</p>
         <p className="text-xs text-slate-600 mt-0.5">{f.degenerateHorizon ? 'Plan-to age must be beyond your current age' : f.retireAge != null ? `Earliest age your money lasts to ${f.planTo} at a steady ~${realRate}% real return` : `Not reachable by ${f.planTo} at a steady ~${realRate}% real return`}</p>
       </div> : <div className="flex flex-wrap gap-6">
         <div><p className="text-xs text-slate-500 uppercase">Retire at {f.chosenAge}</p><p className="text-3xl font-bold text-slate-50 tabular-nums">{f.result.depletedAge == null ? `Lasts to ${f.planTo}` : `Runs out at ${f.result.depletedAge}`}</p><p className="text-xs text-slate-600">at a steady ~{realRate}% real return</p></div>
@@ -41,7 +41,7 @@ export default function PlanScreen({ data, rawData, onChange, pricesStale }: Pro
     <Link to="/fire/adjust" className="inline-block text-sm text-indigo-400 hover:text-indigo-300">Adjust plan</Link>
 
     <div className={`bg-slate-800/70 rounded-xl border border-slate-700/50 p-5 ${f.isRecomputing && f.calc ? 'opacity-50' : ''}`}>
-      <div className="flex items-center justify-between gap-2"><h3 className="font-semibold text-slate-100">Market check{f.retireAge != null && ` — retiring at ${f.retireAge.toFixed(1)}`}</h3>{f.isRecomputing && f.retireAge != null && <Spinner label="Calculating…" />}</div>
+      <div className="flex items-center justify-between gap-2"><h3 className="font-semibold text-slate-100">Market check{f.retireAge != null && ` — retiring at ${f.retireAge}`}</h3>{f.isRecomputing && f.retireAge != null && <Spinner label="Calculating…" />}</div>
       <p className="text-xs text-slate-600">The plan above assumes the same return every year. This replays real and random market sequences against it.</p>
       {f.retireAge == null ? <p className="text-sm text-slate-400 mt-4">Nothing to test until the plan reaches a retirement age.</p> : f.awaitingFirst ? <p className="text-sm text-slate-400 mt-4">{f.calcError ? "Couldn't run the market check — check your inputs." : 'Running the market check…'}</p> : <>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
