@@ -1,15 +1,6 @@
 import type { FireSettings } from '../types';
-import {
-  cashAnnualReturnOf,
-  drawdownParamsFrom,
-  monthlyWithdrawals,
-  planToAgeOf,
-  rawAccessible,
-  rawTotal,
-  sumAll,
-  targetConfidenceOf,
-  type FirePots,
-} from './fireEngine';
+import { planToAgeOf, targetConfidenceOf, type FirePots } from './fireEngine';
+import { pathSetup, simulatePath } from './simulatePath';
 
 export interface MonteCarloResult {
   /** Fraction of simulated paths (0..1) where money lasted to endAge. */
@@ -44,16 +35,11 @@ export function mulberry32(seed: number): () => number {
   };
 }
 
-function clonePots(p: FirePots): FirePots {
-  return { cash: p.cash, isa: p.isa, gia: p.gia, pension: p.pension };
-}
-
 /**
- * Simulate monthly lognormal real returns against the same contribution/drawdown
- * rules (fireEngine.monthlyWithdrawals) as the deterministic projection, retiring
- * every path at retireAge. Cash compounds at its own (deterministic) real rate;
- * ISA/GIA/pension share the equity shock. A path fails if the bridge can't be
- * funded before pension access, or the combined pot is exhausted before endAge.
+ * Simulate monthly lognormal real returns, retiring every path at retireAge. Each
+ * path runs through simulatePath, which shares its contribution, drawdown and
+ * failure rules with the historical backtest. Cash compounds at its own
+ * (deterministic) real rate; ISA/GIA/pension share the equity shock.
  */
 export function runMonteCarlo(
   settings: FireSettings,
@@ -64,24 +50,16 @@ export function runMonteCarlo(
   const runs = opts.runs ?? DEFAULT_RUNS;
   const endAge = opts.endAge ?? planToAgeOf(settings);
   const seed = opts.seed ?? MC_SEED;
-  const { currentAge, monthlyContribution, monthlyPensionContribution, pensionAccessAge, expectedAnnualReturn, inflationRate } = settings;
-  const dd = drawdownParamsFrom(settings);
+  const setup = pathSetup(settings, retireAge, endAge);
+  if (setup.months < 12 || runs <= 0) {
+    return { successRate: 1, bands: [], runs: 0 };
+  }
 
-  const realAnnual = (1 + expectedAnnualReturn / 100) / (1 + inflationRate / 100) - 1;
-  const cashRealAnnual = (1 + cashAnnualReturnOf(settings) / 100) / (1 + inflationRate / 100) - 1;
-  const cashGrowth = Math.pow(1 + cashRealAnnual, 1 / 12); // deterministic; σ = 0
   const sigmaA = Math.max(settings.returnVolatility ?? 15, 0) / 100;
   const sigmaM = sigmaA / Math.sqrt(12);
   // Median-preserving drift with the lognormal -σ²/2 correction; at σ=0 this is
   // exactly the deterministic monthly growth factor.
-  const muM = Math.log(1 + realAnnual) / 12 - (sigmaM * sigmaM) / 2;
-  const monthlyPension = monthlyPensionContribution ?? 0;
-
-  const months = Math.round((endAge - currentAge) * 12);
-  if (months < 12 || runs <= 0) {
-    return { successRate: 1, bands: [], runs: 0 };
-  }
-  const years = Math.floor(months / 12) + 1;
+  const muM = Math.log(1 + setup.realAnnual) / 12 - (sigmaM * sigmaM) / 2;
 
   const rng = mulberry32(seed);
   // Box–Muller produces pairs; keep the spare to halve rng calls.
@@ -96,58 +74,21 @@ export function runMonteCarlo(
     return r * Math.cos(2 * Math.PI * u2);
   }
 
-  const samples: Float64Array[] = Array.from({ length: years }, () => new Float64Array(runs));
+  const samples: Float64Array[] = Array.from({ length: setup.years }, () => new Float64Array(runs));
   let successes = 0;
-
   for (let run = 0; run < runs; run++) {
-    let pots = clonePots(pots0);
-    let failed = false;
-
-    for (let m = 0; m < months; m++) {
-      const age = currentAge + m / 12;
-      if (m % 12 === 0) {
-        samples[m / 12][run] = sumAll(pots);
-      }
-
-      const equityGrowth = Math.exp(muM + sigmaM * normal());
-      pots = {
-        cash: pots.cash * cashGrowth,
-        isa: pots.isa * equityGrowth,
-        gia: pots.gia * equityGrowth,
-        pension: pots.pension * equityGrowth,
-      };
-
-      if (age < retireAge) {
-        pots.isa += monthlyContribution;
-        pots.pension += monthlyPension;
-      } else {
-        const w = monthlyWithdrawals(age, pots, dd);
-        pots.cash -= w.fromCash;
-        pots.isa -= w.fromIsa;
-        pots.gia -= w.fromGia;
-        pots.pension -= w.fromPension;
-        if (age < pensionAccessAge) {
-          if (w.unmetNeed > 0 || rawAccessible(pots) < 0) {
-            if (!failed) failed = true;
-            pots.cash = Math.max(pots.cash, 0);
-            pots.isa = Math.max(pots.isa, 0);
-            pots.gia = Math.max(pots.gia, 0);
-          }
-        } else if (!failed && rawTotal(pots) < 0) {
-          failed = true;
-        }
-      }
-    }
-    const lastYear = Math.floor((months - 1) / 12);
-    if (lastYear + 1 < years) samples[lastYear + 1][run] = Math.max(sumAll(pots), 0);
-
+    const { failed } = simulatePath(
+      setup, pots0,
+      () => Math.exp(muM + sigmaM * normal()),
+      (year, wealth) => { samples[year][run] = wealth; },
+    );
     if (!failed) successes++;
   }
 
   const bands = samples.map((yearSamples, i) => {
     const sorted = Array.from(yearSamples).sort((a, b) => a - b);
     return {
-      age: Math.round(currentAge + i),
+      age: Math.round(setup.currentAge + i),
       p10: Math.round(sorted[Math.floor(0.10 * (runs - 1))]),
       p50: Math.round(sorted[Math.floor(0.50 * (runs - 1))]),
       p90: Math.round(sorted[Math.floor(0.90 * (runs - 1))]),

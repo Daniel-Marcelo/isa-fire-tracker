@@ -263,3 +263,11 @@ describe('successCurve', () => {
     }
   });
 });
+
+describe('runMonteCarlo output pin', () => {
+  it('matches the recorded output for a mixed-pot plan', () => {
+    const s = makeSettings({ statePensionEnabled: true, cashAnnualReturn: 4, pensionTaxRate: 20, giaCgtRate: 10 });
+    const r = runMonteCarlo(s, { cash: 20_000, isa: 150_000, gia: 30_000, pension: 120_000 }, 52, { runs: 200 });
+    expect(r).toMatchSnapshot();
+  });
+});
