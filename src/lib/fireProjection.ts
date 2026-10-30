@@ -11,6 +11,7 @@ import {
   sumAll,
   type DrawdownParams,
   type FirePots,
+  type MonthlyWithdrawal,
 } from './fireEngine';
 
 export interface ProjectionResult {
@@ -29,6 +30,10 @@ export interface ProjectionResult {
   }[];
   earlyFireAge: number | null;
   fullFireAge: number | null;
+  /** Age the plan retires at: the override, else the earliest surviving age. */
+  retireAge: number | null;
+  /** Whole age at which the money first runs short; null if it lasts to planToAge. */
+  depletedAge: number | null;
 }
 
 export function realMonthlyRate(nominalPct: number, inflationPct: number): number {
@@ -80,6 +85,12 @@ function stepMonth(
   return { pots: next, withdrawn: w };
 }
 
+/** Bridge unfunded before pension access, or the combined pot exhausted after it. */
+function failsThisMonth(age: number, pots: FirePots, w: MonthlyWithdrawal, dd: DrawdownParams): boolean {
+  if (age < dd.pensionAccessAge) return w.unmetNeed > 1e-6 || rawAccessible(pots) < -1e-6;
+  return rawTotal(pots) < -1e-6;
+}
+
 /**
  * Deterministic survival check: retiring at retireAge with these pots, does the
  * plan stay solvent through planToAge? Fails if non-pension pots can't fund the
@@ -100,12 +111,7 @@ function survivesRetiringAt(
       pots, age, equityRate, cashRate, 0, 0, true, dd,
     );
     pots = next;
-    if (!w) continue;
-    if (age < dd.pensionAccessAge) {
-      if (w.unmetNeed > 1e-6 || rawAccessible(pots) < -1e-6) return false;
-    } else if (rawTotal(pots) < -1e-6) {
-      return false;
-    }
+    if (w && failsThisMonth(age, pots, w, dd)) return false;
   }
   return true;
 }
@@ -157,9 +163,67 @@ export function findFireAges(
   return { earlyFireAge, fullFireAge };
 }
 
+/** One pass: accumulate until retireAge, then draw down to planToAge. */
+export function planSurvives(settings: FireSettings, pots0: FirePots, retireAge: number): boolean {
+  const { currentAge, monthlyContribution, monthlyPensionContribution, expectedAnnualReturn, inflationRate } = settings;
+  const equityRate = realMonthlyRate(expectedAnnualReturn, inflationRate);
+  const cashRate = realMonthlyRate(cashAnnualReturnOf(settings), inflationRate);
+  const monthlyPension = monthlyPensionContribution ?? 0;
+  const dd = drawdownParamsFrom(settings);
+  const months = horizonMonths(settings);
+
+  let pots = clonePots(pots0);
+  for (let m = 0; m < months; m++) {
+    const age = currentAge + m / 12;
+    const retired = age >= retireAge;
+    const stepped = stepMonth(
+      pots, age, equityRate, cashRate,
+      retired ? 0 : monthlyContribution,
+      retired ? 0 : monthlyPension,
+      retired, dd,
+    );
+    pots = stepped.pots;
+    if (stepped.withdrawn && failsThisMonth(age, pots, stepped.withdrawn, dd)) return false;
+  }
+  return true;
+}
+
+/**
+ * Smallest total monthly saving (ISA + pension, current split kept) that makes the
+ * steady-return plan last when retiring at retireAge. 0 if no saving is needed,
+ * null if no saving level gets there.
+ */
+export function requiredSavingFor(settings: FireSettings, pots: FirePots, retireAge: number): number | null {
+  if (retireAge <= settings.currentAge) return planSurvives(settings, pots, retireAge) ? 0 : null;
+
+  const acc0 = Math.max(settings.monthlyContribution, 0);
+  const pen0 = Math.max(settings.monthlyPensionContribution ?? 0, 0);
+  const base = acc0 + pen0;
+  // With no saving today, route new money to the ISA: the bridge pot usually binds.
+  const isaShare = base > 0 ? acc0 / base : 1;
+  const works = (total: number) => planSurvives(
+    { ...settings, monthlyContribution: total * isaShare, monthlyPensionContribution: total * (1 - isaShare) },
+    pots, retireAge,
+  );
+
+  if (works(0)) return 0;
+  let hi = Math.max(base, 500);
+  for (let guard = 0; !works(hi); guard++) {
+    if (guard >= 20) return null;
+    hi *= 2;
+  }
+  let lo = 0;
+  while (hi - lo > 10) {
+    const mid = (lo + hi) / 2;
+    if (works(mid)) hi = mid; else lo = mid;
+  }
+  return Math.ceil(hi / 10) * 10;
+}
+
 export function project(
   settings: FireSettings,
   pots0: FirePots,
+  retireAgeOverride?: number,
 ): ProjectionResult {
   const { currentAge, monthlyContribution, monthlyPensionContribution, expectedAnnualReturn, inflationRate } = settings;
 
@@ -170,12 +234,13 @@ export function project(
   const months = horizonMonths(settings);
 
   const { earlyFireAge, fullFireAge } = findFireAges(settings, pots0);
-  const retireAge = Math.min(earlyFireAge ?? Infinity, fullFireAge ?? Infinity);
+  const retireAge = retireAgeOverride ?? Math.min(earlyFireAge ?? Infinity, fullFireAge ?? Infinity);
 
   const points: ProjectionResult['points'] = [];
   let pots = clonePots(pots0);
   let accOutThisYear = 0;
   let penOutThisYear = 0;
+  let depletedAge: number | null = null;
 
   for (let m = 0; m <= months; m++) {
     const age = currentAge + m / 12;
@@ -207,8 +272,10 @@ export function project(
     if (stepped.withdrawn) {
       accOutThisYear += accessibleWithdrawn(stepped.withdrawn);
       penOutThisYear += stepped.withdrawn.fromPension;
+      // The loop's last step (m === months) is past the planToAge survival horizon.
+      if (depletedAge === null && m < months && failsThisMonth(age, pots, stepped.withdrawn, dd)) depletedAge = Math.floor(age);
     }
   }
 
-  return { points, earlyFireAge, fullFireAge };
+  return { points, earlyFireAge, fullFireAge, retireAge: isFinite(retireAge) ? retireAge : null, depletedAge };
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { realMonthlyRate, findFireAges, project } from './fireProjection';
+import { realMonthlyRate, findFireAges, project, planSurvives, requiredSavingFor } from './fireProjection';
 import { runMonteCarlo } from './monteCarlo';
 import { potsFromAccessible, type FirePots } from './fireEngine';
 import type { FireSettings } from '../types';
@@ -170,5 +170,90 @@ describe('project', () => {
     for (const pt of r.points) {
       if (pt.age > 67) expect(pt.accWithdrawn + pt.penWithdrawn).toBe(0);
     }
+  });
+});
+
+describe('project with a chosen retirement age', () => {
+  const s = makeSettings({ currentAge: 40, monthlyContribution: 1000, monthlyPensionContribution: 500 });
+  const pots = potsFromAccessible(200_000, 100_000);
+
+  it('retires at the override and only withdraws after it', () => {
+    const r = project(s, pots, 50);
+    expect(r.retireAge).toBe(50);
+    for (const pt of r.points) {
+      if (pt.age <= 50) expect(pt.accWithdrawn + pt.penWithdrawn).toBe(0);
+      else expect(pt.accWithdrawn + pt.penWithdrawn).toBeGreaterThan(0);
+    }
+  });
+
+  it('without an override, retires at the earliest surviving age', () => {
+    const r = project(s, pots);
+    const expected = Math.min(r.earlyFireAge ?? Infinity, r.fullFireAge ?? Infinity);
+    expect(r.retireAge).toBe(expected);
+    expect(r.depletedAge).toBeNull();
+  });
+
+  it('reports the age the money runs out', () => {
+    const broke = makeSettings({ currentAge: 40, annualExpensesInRetirement: 500_000 });
+    const r = project(broke, potsFromAccessible(100_000, 50_000), 41);
+    expect(r.depletedAge).toBe(41);
+  });
+
+  it('reports no retirement age when the plan never works', () => {
+    const r = project(makeSettings({ annualExpensesInRetirement: 2_000_000 }), potsFromAccessible(0, 0));
+    expect(r.retireAge).toBeNull();
+  });
+});
+
+describe('planSurvives', () => {
+  it('agrees with findFireAges: the earliest age survives and a year earlier does not', () => {
+    const settings = makeSettings({ currentAge: 30, monthlyContribution: 1500 });
+    const pots = potsFromAccessible(50_000, 0);
+    const { earlyFireAge } = findFireAges(settings, pots);
+    expect(earlyFireAge).not.toBeNull();
+    expect(planSurvives(settings, pots, earlyFireAge!)).toBe(true);
+    expect(planSurvives(settings, pots, earlyFireAge! - 1)).toBe(false);
+  });
+
+  it('agrees with σ=0 Monte Carlo on clear-cut plans', () => {
+    const settings = makeSettings({ currentAge: 40, monthlyContribution: 1000 });
+    expect(planSurvives(settings, potsFromAccessible(2_000_000, 1_000_000), 45))
+      .toBe(deterministicSurvives(settings, potsFromAccessible(2_000_000, 1_000_000), 45));
+    expect(planSurvives(settings, potsFromAccessible(10_000, 0), 41))
+      .toBe(deterministicSurvives(settings, potsFromAccessible(10_000, 0), 41));
+  });
+});
+
+describe('requiredSavingFor', () => {
+  const withSaving = (s: FireSettings, total: number) => {
+    const base = s.monthlyContribution + (s.monthlyPensionContribution ?? 0);
+    const isaShare = base > 0 ? s.monthlyContribution / base : 1;
+    return { ...s, monthlyContribution: total * isaShare, monthlyPensionContribution: total * (1 - isaShare) };
+  };
+
+  it('is 0 when the current pots already last', () => {
+    const s = makeSettings({ currentAge: 40, monthlyContribution: 500 });
+    expect(requiredSavingFor(s, potsFromAccessible(2_000_000, 1_000_000), 50)).toBe(0);
+  });
+
+  it('is null when saving cannot fund the bridge: all new money goes to a locked pension', () => {
+    const s = makeSettings({ currentAge: 40, monthlyContribution: 0, monthlyPensionContribution: 500 });
+    expect(requiredSavingFor(s, potsFromAccessible(0, 0), 45)).toBeNull();
+  });
+
+  it('the answer works and £20/mo less does not', () => {
+    const s = makeSettings({ currentAge: 40, monthlyContribution: 600, monthlyPensionContribution: 300 });
+    const pots = potsFromAccessible(150_000, 80_000);
+    const solved = requiredSavingFor(s, pots, 50);
+    expect(solved).not.toBeNull();
+    expect(solved! % 10).toBe(0);
+    expect(planSurvives(withSaving(s, solved!), pots, 50)).toBe(true);
+    expect(planSurvives(withSaving(s, solved! - 20), pots, 50)).toBe(false);
+  });
+
+  it('retiring now: 0 if the pots last, null if they do not', () => {
+    const s = makeSettings({ currentAge: 40 });
+    expect(requiredSavingFor(s, potsFromAccessible(5_000_000, 0), 40)).toBe(0);
+    expect(requiredSavingFor(s, potsFromAccessible(1_000, 0), 40)).toBeNull();
   });
 });
