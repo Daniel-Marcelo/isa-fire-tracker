@@ -20,11 +20,22 @@ const col = name => {
   return i;
 };
 const [iDate, iP, iD, iCpi] = [col('Date'), col('P'), col('D'), col('CPI')];
-
-const months = [];
-for (const r of rows.slice(headerIdx + 1)) {
+const complete = r => {
+  if (!r) return false;
   const [date, p, d, cpi] = [r[iDate], r[iP], r[iD], r[iCpi]];
-  if (![date, p, d, cpi].every(v => typeof v === 'number' && Number.isFinite(v))) break;
+  return [date, p, d, cpi].every(v => typeof v === 'number' && Number.isFinite(v));
+};
+
+const dataRows = rows.slice(headerIdx + 1);
+const months = [];
+let stop = dataRows.length;
+for (let i = 0; i < dataRows.length; i++) {
+  const r = dataRows[i];
+  if (!complete(r)) {
+    stop = i;
+    break;
+  }
+  const [date, p, d, cpi] = [r[iDate], r[iP], r[iD], r[iCpi]];
   const year = Math.floor(date);
   // Shiller writes October as 1871.1, so read the month from two decimals.
   const month = Math.round((date - year) * 100);
@@ -34,6 +45,12 @@ for (const r of rows.slice(headerIdx + 1)) {
     if (year !== expected[0] || month !== expected[1]) throw new Error(`Gap after ${prev.year}-${prev.month}`);
   }
   months.push({ year, month, p, d, cpi });
+}
+
+if (dataRows.slice(stop + 1).some(complete)) {
+  const last = months.at(-1);
+  const where = last ? `${last.year}-${last.month}` : 'the header';
+  throw new Error(`Data resumes after an incomplete row following ${where}`);
 }
 
 // Real total-return index: D is an annual dividend rate, so a twelfth is paid each month.
