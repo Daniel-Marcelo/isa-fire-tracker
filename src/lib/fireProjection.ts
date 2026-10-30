@@ -220,6 +220,48 @@ export function requiredSavingFor(settings: FireSettings, pots: FirePots, retire
   return Math.ceil(hi / 10) * 10;
 }
 
+/** Pots at the start of retirement, after contributions and before the first withdrawal. */
+function potsAtRetirement(settings: FireSettings, pots0: FirePots, retireAge: number): FirePots {
+  if (retireAge <= settings.currentAge) return clonePots(pots0);
+  const { currentAge, monthlyContribution, monthlyPensionContribution, expectedAnnualReturn, inflationRate } = settings;
+  const equityRate = realMonthlyRate(expectedAnnualReturn, inflationRate);
+  const cashRate = realMonthlyRate(cashAnnualReturnOf(settings), inflationRate);
+  const monthlyPension = monthlyPensionContribution ?? 0;
+  const dd = drawdownParamsFrom(settings);
+  const months = Math.round((retireAge - currentAge) * 12);
+  let pots = clonePots(pots0);
+  for (let m = 0; m < months; m++) {
+    pots = stepMonth(pots, currentAge + m / 12, equityRate, cashRate, monthlyContribution, monthlyPension, false, dd).pots;
+  }
+  return pots;
+}
+
+/**
+ * Smallest ISA, in today's money at retireAge, that lets the plan survive to
+ * planToAge. The pension is whatever the current savings path holds by then;
+ * cash and GIA are not counted, so this is the tax-free bridge. 0 when the
+ * pension can already carry spending. null when no finite ISA gets there.
+ * Rounded up to the next £100.
+ */
+export function requiredIsaAt(settings: FireSettings, pots: FirePots, retireAge: number): number | null {
+  const pension = Math.max(potsAtRetirement(settings, pots, retireAge).pension, 0);
+  const fromRetirement: FireSettings = { ...settings, currentAge: retireAge };
+  const works = (isa: number) => planSurvives(fromRetirement, { cash: 0, isa, gia: 0, pension }, retireAge);
+
+  if (works(0)) return 0;
+  let hi = 10_000;
+  for (let guard = 0; !works(hi); guard++) {
+    if (guard >= 24) return null;
+    hi *= 2;
+  }
+  let lo = 0;
+  while (hi - lo > 100) {
+    const mid = (lo + hi) / 2;
+    if (works(mid)) hi = mid; else lo = mid;
+  }
+  return Math.ceil(hi / 100) * 100;
+}
+
 export function project(
   settings: FireSettings,
   pots0: FirePots,

@@ -1,7 +1,7 @@
 import { useCallback, useDeferredValue, useMemo } from 'react';
 import type { AppData, FireSettings } from '../types';
-import { chosenRetirementAgeOf, planToAgeOf, potsFromProviders } from '../lib/fireEngine';
-import { project, requiredSavingFor } from '../lib/fireProjection';
+import { chosenRetirementAgeOf, planToAgeOf, potsFromProviders, sumAccessible } from '../lib/fireEngine';
+import { project, requiredIsaAt, requiredSavingFor } from '../lib/fireProjection';
 import { fireNumberOf } from '../lib/fireNumber';
 
 export function usePlan(data: AppData, rawData: AppData, onChange: (data: AppData) => void) {
@@ -22,6 +22,10 @@ export function usePlan(data: AppData, rawData: AppData, onChange: (data: AppDat
     () => (ds.fireMode ?? 'earliest') === 'fixedAge' ? requiredSavingFor(ds, pots, chosenRetirementAgeOf(ds)) : null,
     [ds, pots],
   );
+  const isaNeeded = useMemo(
+    () => (ds.fireMode ?? 'earliest') === 'fixedAge' && result.retireAge != null ? requiredIsaAt(ds, pots, result.retireAge) : null,
+    [ds, pots, result.retireAge],
+  );
   const fireNumber = useMemo(() => fireNumberOf(s, pots), [s, pots]);
   return {
     s,
@@ -35,6 +39,11 @@ export function usePlan(data: AppData, rawData: AppData, onChange: (data: AppDat
     result,
     retireAge: result.retireAge,
     requiredSaving,
+    isaNeeded,
+    accessibleNow: sumAccessible(pots),
+    accessibleAtRetirement: result.retireAge == null
+      ? null
+      : result.points.find(p => p.age === Math.round(result.retireAge!))?.accessible ?? null,
     fireNumber,
     currentTotalContribution: s.monthlyContribution + (s.monthlyPensionContribution ?? 0),
     statePensionOn: s.statePensionEnabled ?? true,

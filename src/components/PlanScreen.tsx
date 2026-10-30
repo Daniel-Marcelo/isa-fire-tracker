@@ -3,6 +3,24 @@ import type { AppData } from '../types';
 import { formatYearRanges } from '../lib/historicalBacktest';
 import { ContributionDeltaChip, Spinner, confidenceColor, useFireCalc } from './useFireCalc';
 
+function BridgeNote({ f, realRate }: { f: ReturnType<typeof useFireCalc>; realRate: string }) {
+  const open = f.pensionAccessAge;
+  const age = f.mode === 'fixedAge' ? f.chosenAge : f.retireAge;
+  const target = f.mode === 'fixedAge' ? f.isaNeeded : f.accessibleAtRetirement;
+  const left = f.result.points.find(p => p.age === open)?.accessible;
+  if (age == null || target == null) return null;
+  const pct = target > 0 ? Math.min(100, (f.accessibleNow / target) * 100) : 0;
+  return <div className="mt-4 pt-4 border-t border-slate-700/50">
+    <p className="text-xs text-slate-500 font-medium uppercase tracking-wide">{f.mode === 'fixedAge' ? `ISA needed at ${age}` : `ISA bridge at ${age}`}</p>
+    <p className="text-xl font-bold text-slate-50 tabular-nums mt-1">{f.fmt(target)}</p>
+    {target > 0 && <>
+      <p className="text-xs text-slate-500 mt-1">{f.fmtShort(f.accessibleNow)} accessible today · {pct.toFixed(0)}% of this figure</p>
+      <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden mt-2"><div className="h-full rounded-full bg-indigo-500" style={{ width: `${pct}%` }} /></div>
+    </>}
+    <p className="text-xs text-slate-600 mt-2">Drawing {f.fmt(f.s.annualExpensesInRetirement)} a year, in today's money, at a steady ~{realRate}% real return.{age < open && left != null && (left > 0 ? ` ${f.mode === 'fixedAge' ? 'On your current saving, about' : 'About'} ${f.fmt(left)} accessible left at ${open}.` : ` ${f.mode === 'fixedAge' ? 'On your current saving, nothing' : 'Nothing'} accessible left at ${open}.`)}</p>
+  </div>;
+}
+
 interface Props { data: AppData; rawData: AppData; onChange: (data: AppData) => void; pricesStale: boolean; }
 
 const pct = (rate: number) => `${(rate * 100).toFixed(0)}%`;
@@ -22,22 +40,26 @@ export default function PlanScreen({ data, rawData, onChange, pricesStale }: Pro
         <p className="text-xs text-slate-500 font-medium uppercase tracking-wide">FIRE age</p>
         <p className="text-3xl font-bold text-slate-50 tabular-nums">{f.retireAge != null ? `Age ${f.retireAge}` : '—'}</p>
         <p className="text-xs text-slate-600 mt-0.5">{f.degenerateHorizon ? 'Plan-to age must be beyond your current age' : f.retireAge != null ? `Earliest age your money lasts to ${f.planTo} at a steady ~${realRate}% real return` : `Not reachable by ${f.planTo} at a steady ~${realRate}% real return`}</p>
-      </div> : <div className="flex flex-wrap gap-6">
+        <BridgeNote f={f} realRate={realRate} />
+      </div> : <div>
+        <div className="flex flex-wrap gap-6">
         <div><p className="text-xs text-slate-500 uppercase">Retire at {f.chosenAge}</p><p className="text-3xl font-bold text-slate-50 tabular-nums">{f.result.depletedAge == null ? `Lasts to ${f.planTo}` : `Runs out at ${f.result.depletedAge}`}</p><p className="text-xs text-slate-600">at a steady ~{realRate}% real return</p></div>
         <div><p className="text-xs text-slate-500 uppercase">Required saving</p><p className="text-3xl font-bold text-slate-50 tabular-nums">{f.requiredSaving == null ? '—' : `${f.fmt(f.requiredSaving)}/mo`}</p><p className="text-xs text-slate-600">{f.requiredSaving == null ? `Saving alone can't make ${f.chosenAge} work at your current ISA/pension split — push the age out or trim spending.` : f.requiredSaving === 0 ? 'Your current pots already last — no further saving needed.' : `total monthly saving, at your current ISA/pension split, for your money to last to ${f.planTo}`}</p>{f.requiredSaving != null && <ContributionDeltaChip current={f.currentTotalContribution} required={f.requiredSaving} fmt={f.fmt} />}</div>
+        </div>
+        <BridgeNote f={f} realRate={realRate} />
       </div>}
     </div>
 
     <div className="bg-slate-800/70 rounded-xl border border-slate-700/50 p-5">
       <p className="text-xs text-slate-500 font-medium uppercase tracking-wide">FIRE number</p>
       <p className="text-3xl font-bold text-slate-50 tabular-nums">{f.fmt(n.target)}</p>
-      <p className="text-xs text-slate-600 mt-0.5">{f.fmt(f.s.annualExpensesInRetirement)}/yr ÷ {(n.withdrawalRate * 100).toFixed(1)}% withdrawal rate{n.statePensionAge != null && ` · ${f.fmt(n.targetWithStatePension)} once the state pension starts at ${n.statePensionAge}`}</p>
+      <p className="text-xs text-slate-600 mt-0.5">{f.fmt(f.s.annualExpensesInRetirement)}/yr ÷ {(n.withdrawalRate * 100).toFixed(1)}% withdrawal rate{n.statePensionAge != null && ` · ${f.fmt(n.targetWithStatePension)} once the state pension starts at ${n.statePensionAge}`}. Counts pension locked until {f.pensionAccessAge} the same as the ISA.</p>
       <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden mt-4"><div className="h-full rounded-full bg-indigo-500" style={{ width: `${Math.min(100, n.progress * 100)}%` }} /></div>
-      <p className="text-xs text-slate-400 mt-2 tabular-nums">{(n.progress * 100).toFixed(0)}% there · {f.fmt(n.invested)} supports {f.fmt(n.safeIncomeToday)}/yr today</p>
+      <p className="text-xs text-slate-400 mt-2 tabular-nums">{(n.progress * 100).toFixed(0)}% of this figure · {f.fmt(n.invested)} supports {f.fmt(n.safeIncomeToday)}/yr today</p>
       {n.pension > 0 && <p className="text-xs text-slate-600 mt-1">{f.fmt(n.pension)} of that is pension, locked until {f.pensionAccessAge}.</p>}
     </div>
 
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">{([['Cash', f.pots.cash, 'text-teal-400'], ['ISA', f.pots.isa, 'text-indigo-400'], ['GIA', f.pots.gia, 'text-amber-400'], ['Pension', f.pots.pension, 'text-violet-400']] as const).map(([label, value, color]) => <div key={label} className="bg-slate-800/70 rounded-xl border border-slate-700/50 p-5"><p className={`text-xs font-medium uppercase tracking-wide mb-1 ${color}`}>{label}</p><p className="text-2xl font-bold text-slate-50 tabular-nums">{f.fmt(value)}</p></div>)}</div>
+    <div><p className="text-xs text-slate-500 font-medium uppercase tracking-wide mb-3">Today</p><div className="grid grid-cols-2 lg:grid-cols-4 gap-3">{([['Cash', f.pots.cash, 'text-teal-400'], ['ISA', f.pots.isa, 'text-indigo-400'], ['GIA', f.pots.gia, 'text-amber-400'], ['Pension', f.pots.pension, 'text-violet-400']] as const).map(([label, value, color]) => <div key={label} className="bg-slate-800/70 rounded-xl border border-slate-700/50 p-5"><p className={`text-xs font-medium uppercase tracking-wide mb-1 ${color}`}>{label}</p><p className="text-2xl font-bold text-slate-50 tabular-nums">{f.fmt(value)}</p></div>)}</div></div>
     <Link to="/fire/adjust" className="inline-block text-sm text-indigo-400 hover:text-indigo-300">Adjust plan</Link>
 
     <div className={`bg-slate-800/70 rounded-xl border border-slate-700/50 p-5 ${f.isRecomputing && f.calc ? 'opacity-50' : ''}`}>

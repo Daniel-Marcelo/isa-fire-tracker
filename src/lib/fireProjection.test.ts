@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { realMonthlyRate, findFireAges, project, planSurvives, requiredSavingFor } from './fireProjection';
+import { realMonthlyRate, findFireAges, project, planSurvives, requiredSavingFor, requiredIsaAt } from './fireProjection';
 import { runMonteCarlo } from './monteCarlo';
 import { potsFromAccessible, type FirePots } from './fireEngine';
 import type { FireSettings } from '../types';
@@ -255,5 +255,35 @@ describe('requiredSavingFor', () => {
     const s = makeSettings({ currentAge: 40 });
     expect(requiredSavingFor(s, potsFromAccessible(5_000_000, 0), 40)).toBe(0);
     expect(requiredSavingFor(s, potsFromAccessible(1_000, 0), 40)).toBeNull();
+  });
+});
+
+describe('requiredIsaAt', () => {
+  it('is 0 once the pension can carry spending', () => {
+    const s = makeSettings({ currentAge: 60, pensionAccessAge: 57, annualExpensesInRetirement: 20_000 });
+    expect(requiredIsaAt(s, potsFromAccessible(0, 5_000_000), 60)).toBe(0);
+  });
+
+  it('an earlier age needs a larger ISA, and the answer is a bridge that just works', () => {
+    const s = makeSettings({ currentAge: 40, annualExpensesInRetirement: 30_000 });
+    const pots = potsFromAccessible(0, 0);
+    const at40 = requiredIsaAt(s, pots, 40);
+    const at50 = requiredIsaAt(s, pots, 50);
+    expect(at40).not.toBeNull();
+    expect(at50).not.toBeNull();
+    expect(at40! % 100).toBe(0);
+    expect(at40!).toBeGreaterThan(at50!);
+
+    const from40 = { ...s, currentAge: 40 };
+    expect(planSurvives(from40, potsFromAccessible(at40!, 0), 40)).toBe(true);
+    expect(planSurvives(from40, potsFromAccessible(at40! - 300, 0), 40)).toBe(false);
+  });
+
+  it('pension contributions before retirement shrink the ISA the bridge needs', () => {
+    const s = makeSettings({ currentAge: 35, annualExpensesInRetirement: 25_000 });
+    const bare = requiredIsaAt(s, potsFromAccessible(0, 0), 50);
+    const withPension = requiredIsaAt({ ...s, monthlyPensionContribution: 1_000 }, potsFromAccessible(0, 0), 50);
+    expect(withPension).not.toBeNull();
+    expect(withPension!).toBeLessThan(bare!);
   });
 });

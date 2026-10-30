@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import type { AppData } from '../types';
 import { getCurrentTaxYearContribution } from '../store';
-import { ISA_ANNUAL_ALLOWANCE } from '../utils';
+import { ISA_ANNUAL_ALLOWANCE, formatCurrency, formatCurrencyShort } from '../utils';
 import { portfolioSummary } from '../lib/portfolioSummary';
 import { withdrawalRateOf } from '../lib/fireEngine';
 import { usePlan } from './usePlan';
@@ -84,6 +84,8 @@ export default function Home({ data, gbpData, rawData, onChange, pricesUpdatedAt
         </div>
       )}
 
+      {(summary.hasAccounts || data.fireSettings) && <IsaBridge plan={plan} />}
+
       <div className="grid grid-cols-2 gap-3">
         {(summary.hasAccounts || data.fireSettings) && (
           <Link to="/fire" className="bg-slate-800/70 rounded-xl border border-slate-700/50 p-4 block">
@@ -112,6 +114,77 @@ export default function Home({ data, gbpData, rawData, onChange, pricesUpdatedAt
           </Link>
         )}
       </div>
+    </div>
+  );
+}
+
+const gbp = (n: number) => formatCurrency(n, 'GBP');
+
+function AccessAge({ age }: { age: number }) {
+  return <Link to="/fire/assumptions" className="text-indigo-400 hover:text-indigo-300">{age}</Link>;
+}
+
+function BridgeMeta({ plan, age }: { plan: ReturnType<typeof usePlan>; age: number | null }) {
+  const open = plan.pensionAccessAge;
+  const real = (plan.s.expectedAnnualReturn - plan.s.inflationRate).toFixed(1);
+  const left = plan.result.points.find(p => p.age === open)?.accessible;
+  const showLeft = age != null && age < open && left != null;
+  return (
+    <>
+      <p className="text-xs text-slate-500 mt-2">
+        Drawing {gbp(plan.s.annualExpensesInRetirement)} a year, in today's money, at a steady ~{real}% real return.
+        {showLeft && (left > 0
+          ? <> {plan.mode === 'fixedAge' ? 'On your current saving, about' : 'About'} {gbp(left)} accessible left at <AccessAge age={open} />.</>
+          : <> {plan.mode === 'fixedAge' ? 'On your current saving, nothing' : 'Nothing'} accessible left at <AccessAge age={open} />.</>)}
+      </p>
+      <p className="text-xs text-slate-500 mt-1">
+        {age == null
+          ? `Not reachable by ${plan.planTo}.`
+          : age >= open
+            ? <>The pension can be spent from <AccessAge age={open} />.</>
+            : <>Has to last until the pension can carry spending at <AccessAge age={open} />.</>}
+      </p>
+    </>
+  );
+}
+
+function BridgeProgress({ now, target }: { now: number; target: number }) {
+  const pct = Math.min(100, (now / target) * 100);
+  return (
+    <>
+      <p className="text-xs text-slate-500 mt-1">{formatCurrencyShort(now, 'GBP')} accessible today · {pct.toFixed(0)}% of this figure</p>
+      <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden mt-3">
+        <div className="h-full rounded-full bg-indigo-500" style={{ width: `${pct}%` }} />
+      </div>
+    </>
+  );
+}
+
+function IsaBridge({ plan }: { plan: ReturnType<typeof usePlan> }) {
+  const age = plan.retireAge;
+  if (plan.mode === 'fixedAge') {
+    const needed = plan.isaNeeded;
+    return (
+      <div className="bg-slate-800/70 rounded-xl border border-slate-700/50 p-4">
+        <Link to="/fire" className="block">
+          <p className="text-sm text-slate-400">ISA needed at {plan.chosenAge}</p>
+          <p className="text-2xl font-bold text-slate-50 tabular-nums mt-2">{needed == null ? '—' : gbp(needed)}</p>
+        </Link>
+        {needed != null && needed > 0 && <BridgeProgress now={plan.accessibleNow} target={needed} />}
+        {needed == null && <p className="text-xs text-slate-500 mt-2">No ISA balance makes {plan.chosenAge} work.</p>}
+        <BridgeMeta plan={plan} age={plan.chosenAge} />
+      </div>
+    );
+  }
+  const target = plan.accessibleAtRetirement;
+  return (
+    <div className="bg-slate-800/70 rounded-xl border border-slate-700/50 p-4">
+      <Link to="/fire" className="block">
+        <p className="text-sm text-slate-400">ISA bridge{age != null ? ` at ${age}` : ''}</p>
+        <p className="text-2xl font-bold text-slate-50 tabular-nums mt-2">{target == null ? '—' : gbp(target)}</p>
+      </Link>
+      {target != null && target > 0 && <BridgeProgress now={plan.accessibleNow} target={target} />}
+      <BridgeMeta plan={plan} age={age} />
     </div>
   );
 }
