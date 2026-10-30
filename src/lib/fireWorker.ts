@@ -1,8 +1,7 @@
-// Web Worker: runs the heavy Monte Carlo suite off the main thread so typing in
-// the FIRE inputs never blocks. A single recompute is ~40 full simulations
-// (~4s on the main thread); here it runs in the background and posts results
-// back. The actual calculation lives in fireCalc.ts (a pure function) so the
-// main-thread fallback in FIRECalculator.tsx can call the identical logic.
+// Web Worker: runs the Monte Carlo and historical stress tests off the main
+// thread so typing in the FIRE inputs never blocks. The calculation lives in
+// fireCalc.ts (a pure function) so the main-thread fallback in useStressTest.ts
+// runs the identical logic.
 import { runFireCalc, type FireCalcRequest, type FireCalcResult } from './fireCalc';
 
 // Cast around the DOM/webworker lib overlap: postMessage in a dedicated worker

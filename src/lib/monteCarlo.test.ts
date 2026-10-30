@@ -1,8 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { FireSettings } from '../types';
-import { mulberry32, runMonteCarlo, solveEarliestFireAge, solveRequiredContribution, successCurve } from './monteCarlo';
-import { findFireAges } from './fireProjection';
-import { potsFromAccessible, targetConfidenceOf } from './fireEngine';
+import { mulberry32, runMonteCarlo, successCurve } from './monteCarlo';
+import { potsFromAccessible } from './fireEngine';
 
 function makeSettings(overrides: Partial<FireSettings> = {}): FireSettings {
   return {
@@ -116,138 +115,6 @@ describe('runMonteCarlo', () => {
   });
 });
 
-/** Treat "not reachable" as an age above every real one so monotonicity comparisons hold. */
-const ageOrInf = (a: number | null): number => a ?? Infinity;
-
-describe('solveEarliestFireAge', () => {
-  it('with σ=0 the solved age survives deterministically and one month earlier does not', () => {
-    const s = makeSettings({ returnVolatility: 0, monthlyContribution: 1500 });
-    const pots = potsFromAccessible(200_000, 120_000);
-    const solved = solveEarliestFireAge(s, pots);
-    expect(solved).not.toBeNull();
-    const survives = (age: number) =>
-      runMonteCarlo(s, pots, age, { runs: 1 }).successRate === 1;
-    expect(survives(solved!)).toBe(true);
-    expect(survives(solved! - 1 / 12)).toBe(false);
-  });
-
-  it('σ=0 solved age matches the deterministic survival age within a month', () => {
-    const s = makeSettings({ returnVolatility: 0, monthlyContribution: 1500 });
-    const pots = potsFromAccessible(200_000, 120_000);
-    const solved = solveEarliestFireAge(s, pots)!;
-    const { earlyFireAge, fullFireAge } = findFireAges(s, pots);
-    const detAge = Math.min(ageOrInf(earlyFireAge), ageOrInf(fullFireAge));
-    expect(solved).toBeLessThanOrEqual(detAge + 1e-9);
-    expect(solved).toBeGreaterThan(detAge - 1);
-  });
-
-  it('absurd wealth solves to currentAge; absurd spending is unreachable (null)', () => {
-    const rich = solveEarliestFireAge(makeSettings({ returnVolatility: 10 }), potsFromAccessible(50_000_000, 20_000_000));
-    expect(rich).toBe(40);
-    const poor = solveEarliestFireAge(
-      makeSettings({ annualExpensesInRetirement: 2_000_000, monthlyContribution: 0, monthlyPensionContribution: 0 }),
-      potsFromAccessible(10_000, 10_000),
-    );
-    expect(poor).toBeNull();
-  });
-
-  it('raising the target confidence never lowers the solved age', () => {
-    const pots = potsFromAccessible(300_000, 150_000);
-    const lo = solveEarliestFireAge(makeSettings({ targetConfidence: 70 }), pots);
-    const hi = solveEarliestFireAge(makeSettings({ targetConfidence: 95 }), pots);
-    expect(ageOrInf(hi)).toBeGreaterThanOrEqual(ageOrInf(lo));
-  });
-
-  it('enabling the state pension never raises the solved age', () => {
-    const pots = potsFromAccessible(300_000, 150_000);
-    const off = solveEarliestFireAge(makeSettings({ statePensionEnabled: false }), pots);
-    const on = solveEarliestFireAge(
-      makeSettings({ statePensionEnabled: true, statePensionAnnual: 12000, statePensionAge: 67 }),
-      pots,
-    );
-    expect(ageOrInf(on)).toBeLessThanOrEqual(ageOrInf(off));
-  });
-
-  it('a shorter planToAge never raises the solved age', () => {
-    const pots = potsFromAccessible(300_000, 150_000);
-    const short = solveEarliestFireAge(makeSettings({ planToAge: 85 }), pots);
-    const long = solveEarliestFireAge(makeSettings({ planToAge: 100 }), pots);
-    expect(ageOrInf(short)).toBeLessThanOrEqual(ageOrInf(long));
-  });
-
-  it('is deterministic: the same seed gives an identical solved age and curve', () => {
-    const s = makeSettings({ returnVolatility: 12 });
-    const pots = potsFromAccessible(300_000, 150_000);
-    expect(solveEarliestFireAge(s, pots)).toBe(solveEarliestFireAge(s, pots));
-    expect(successCurve(s, pots)).toEqual(successCurve(s, pots));
-  }, 30_000);
-});
-
-describe('solveRequiredContribution', () => {
-  it('returns 0 when ample pots already clear the target with modest spending', () => {
-    const s = makeSettings({ monthlyContribution: 500, monthlyPensionContribution: 200 });
-    const result = solveRequiredContribution(s, potsFromAccessible(2_000_000, 1_000_000), 50);
-    expect(result).toBe(0);
-  });
-
-  it('returns null when unreachable at any saving rate: a structural bridge failure', () => {
-    // All new money is routed to pension (isaShare = 0) but retirement happens
-    // well before pensionAccessAge, and the ISA/cash/GIA pots start at 0.
-    const s = makeSettings({
-      currentAge: 40,
-      monthlyContribution: 0,
-      monthlyPensionContribution: 500,
-      pensionAccessAge: 57,
-    });
-    const result = solveRequiredContribution(s, potsFromAccessible(0, 0), 45);
-    expect(result).toBeNull();
-  });
-
-  it('returns null for a zero-length or negative accumulation window', () => {
-    const s = makeSettings({ currentAge: 40 });
-    const pots = potsFromAccessible(300_000, 150_000);
-    expect(solveRequiredContribution(s, pots, 40)).toBeNull();
-    expect(solveRequiredContribution(s, pots, 38)).toBeNull();
-  });
-
-  it('the solved contribution meets the target; £20/mo less misses it', () => {
-    const s = makeSettings({ monthlyContribution: 600, monthlyPensionContribution: 300 });
-    const pots = potsFromAccessible(150_000, 80_000);
-    const retireAge = 50;
-    const solved = solveRequiredContribution(s, pots, retireAge);
-    expect(solved).not.toBeNull();
-
-    const target = targetConfidenceOf(s) / 100;
-    const base = s.monthlyContribution + (s.monthlyPensionContribution ?? 0);
-    const isaShare = base > 0 ? s.monthlyContribution / base : 1;
-    const rateAt = (total: number) => runMonteCarlo(
-      { ...s, monthlyContribution: total * isaShare, monthlyPensionContribution: total * (1 - isaShare) },
-      pots, retireAge,
-    ).successRate;
-
-    expect(rateAt(solved!)).toBeGreaterThanOrEqual(target);
-    expect(rateAt(solved! - 20)).toBeLessThan(target);
-  });
-
-  it('preserves the current ISA:pension contribution ratio', () => {
-    const pots = potsFromAccessible(150_000, 50_000);
-    const retireAge = 48;
-    const isaHeavy = makeSettings({ monthlyContribution: 800, monthlyPensionContribution: 400 });
-    const penHeavy = makeSettings({ monthlyContribution: 400, monthlyPensionContribution: 800 });
-    const solvedIsaHeavy = solveRequiredContribution(isaHeavy, pots, retireAge);
-    const solvedPenHeavy = solveRequiredContribution(penHeavy, pots, retireAge);
-    if (solvedIsaHeavy != null && solvedPenHeavy != null) {
-      expect(solvedIsaHeavy).toBeLessThanOrEqual(solvedPenHeavy);
-    }
-  });
-
-  it('is deterministic: the same inputs give an identical solved contribution', () => {
-    const s = makeSettings({ returnVolatility: 12 });
-    const pots = potsFromAccessible(300_000, 150_000);
-    expect(solveRequiredContribution(s, pots, 50)).toBe(solveRequiredContribution(s, pots, 50));
-  });
-});
-
 describe('successCurve', () => {
   it('is non-decreasing in retirement age and reported as percentages', () => {
     const s = makeSettings({ returnVolatility: 15 });
@@ -261,6 +128,12 @@ describe('successCurve', () => {
       expect(curve[i].pct).toBeGreaterThanOrEqual(curve[i - 1].pct);
       expect(curve[i].age).toBeGreaterThan(curve[i - 1].age);
     }
+  });
+
+  it('is deterministic for the same seed', () => {
+    const s = makeSettings({ returnVolatility: 12 });
+    const pots = potsFromAccessible(300_000, 150_000);
+    expect(successCurve(s, pots)).toEqual(successCurve(s, pots));
   });
 });
 

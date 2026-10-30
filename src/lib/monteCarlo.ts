@@ -1,5 +1,5 @@
 import type { FireSettings } from '../types';
-import { planToAgeOf, targetConfidenceOf, type FirePots } from './fireEngine';
+import { planToAgeOf, type FirePots } from './fireEngine';
 import { pathSetup, simulatePath } from './simulatePath';
 
 export interface MonteCarloResult {
@@ -18,8 +18,8 @@ export interface MonteCarloOptions {
 }
 
 /**
- * One shared seed for every simulation in the app. The earliest-age solver and
- * the sensitivity chips compare MC results against each other; with common
+ * One shared seed for every simulation in the app. The headline and the
+ * sensitivity chips compare MC results against each other; with common
  * random numbers the deltas are real, with fresh seeds they'd be noise.
  */
 export const MC_SEED = 12345;
@@ -96,89 +96,6 @@ export function runMonteCarlo(
   });
 
   return { successRate: successes / runs, bands, runs };
-}
-
-/**
- * Earliest retirement age (month resolution) whose Monte Carlo success rate
- * meets the settings' target confidence, or null if even retiring at
- * planToAge − 1 misses it.
- */
-export function solveEarliestFireAge(
-  settings: FireSettings,
-  pots: FirePots,
-  opts: MonteCarloOptions = {},
-): number | null {
-  const { currentAge } = settings;
-  const endAge = opts.endAge ?? planToAgeOf(settings);
-  const target = targetConfidenceOf(settings) / 100;
-  if (endAge <= currentAge + 1) return null;
-
-  const mcOpts: MonteCarloOptions = {
-    runs: opts.runs ?? DEFAULT_RUNS,
-    seed: opts.seed ?? MC_SEED,
-    endAge,
-  };
-  const meets = (monthsFromNow: number) =>
-    runMonteCarlo(settings, pots, currentAge + monthsFromNow / 12, mcOpts)
-      .successRate >= target;
-
-  let lo = 0;
-  let hi = Math.round((endAge - 1 - currentAge) * 12);
-  if (!meets(hi)) return null;
-  if (meets(lo)) return currentAge;
-  while (hi - lo > 1) {
-    const mid = Math.floor((lo + hi) / 2);
-    if (meets(mid)) hi = mid; else lo = mid;
-  }
-  return currentAge + hi / 12;
-}
-
-/**
- * Smallest total monthly contribution (ISA + pension combined) whose Monte Carlo
- * success rate at `retireAge` meets the settings' target confidence, holding the
- * current ISA:pension contribution ratio fixed. Returns null if unreachable, 0 if
- * current pots already suffice with no contributions.
- */
-export function solveRequiredContribution(
-  settings: FireSettings,
-  pots: FirePots,
-  retireAge: number,
-  opts: MonteCarloOptions = {},
-): number | null {
-  if (retireAge <= settings.currentAge) return null;
-
-  const target = targetConfidenceOf(settings) / 100;
-  const acc0 = Math.max(settings.monthlyContribution, 0);
-  const pen0 = Math.max(settings.monthlyPensionContribution ?? 0, 0);
-  const base = acc0 + pen0;
-  // Split ratio: if the user contributes nothing today, route new money to ISA
-  // (the bridge pot that usually binds for early retirement).
-  const isaShare = base > 0 ? acc0 / base : 1;
-
-  const rateAt = (total: number) => {
-    const s2: FireSettings = {
-      ...settings,
-      monthlyContribution: total * isaShare,
-      monthlyPensionContribution: total * (1 - isaShare),
-    };
-    return runMonteCarlo(s2, pots, retireAge,
-      { runs: opts.runs ?? DEFAULT_RUNS, seed: opts.seed ?? MC_SEED, endAge: opts.endAge }).successRate;
-  };
-
-  if (rateAt(0) >= target) return 0;
-
-  let hi = Math.max(base, 500);
-  let guard = 0;
-  while (rateAt(hi) < target) {
-    hi *= 2;
-    if (++guard > 20) return null;
-  }
-  let lo = 0;
-  while (hi - lo > 10) {
-    const mid = (lo + hi) / 2;
-    if (rateAt(mid) >= target) hi = mid; else lo = mid;
-  }
-  return Math.ceil(hi / 10) * 10;
 }
 
 /**

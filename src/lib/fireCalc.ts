@@ -1,68 +1,46 @@
-// Pure FIRE calculation core, shared by the Web Worker (fireWorker.ts) and the
-// main-thread fallback in FIRECalculator.tsx. Keeping this logic in one place
-// means the two execution paths can never drift from each other.
+// Pure stress-test core, shared by the Web Worker (fireWorker.ts) and the
+// main-thread fallback in useStressTest.ts, so the two paths can't drift.
 import type { FireSettings } from '../types';
-import { runMonteCarlo, solveEarliestFireAge, solveRequiredContribution, successCurve, type MonteCarloResult } from './monteCarlo';
+import { runMonteCarlo, successCurve, type MonteCarloResult } from './monteCarlo';
+import { runBacktest, type BacktestResult } from './historicalBacktest';
 import { planToAgeOf, type FirePots } from './fireEngine';
 
 export interface FireCalcRequest {
   id: number;
   settings: FireSettings;
   pots: FirePots;
+  /** Age the steady-return plan retires at; null when it never gets there. */
+  retireAge: number | null;
 }
 
 export interface FireCalcResult {
   id: number;
-  solvedAge: number | null;
-  headlineAge: number | null;
   mc: MonteCarloResult | null;
+  backtest: BacktestResult | null;
   curve: { age: number; pct: number }[];
   sensitivity: { later: number; lessSpend: number } | null;
-  requiredContribution: number | null;
 }
 
-// The solver runs ~10 sims and drives the headline age, so it and the headline/
-// sensitivity runs must share a count to stay mutually consistent (the solver
-// mustn't claim "meets 78%" while the headline reads 77%). 600 gives ±~1.6pp —
-// plenty for an estimate — at roughly half the cost of 1,000. The curve is only
-// a visual shape, so it can be coarser still.
+// The headline and sensitivity runs share a count and seed (common random numbers)
+// so the chips' deltas are real, not noise. 600 gives ±~1.6pp. The curve is only a
+// visual shape, so it can be coarser.
 export const MC_RUNS = 600;
 export const CURVE_RUNS = 300;
 
-export function runFireCalc(req: FireCalcRequest): FireCalcResult {
-  const { id, settings, pots } = req;
-
+export function runFireCalc({ id, settings, pots, retireAge }: FireCalcRequest): FireCalcResult {
   const planTo = planToAgeOf(settings);
   const degenerate = planTo <= settings.currentAge + 1;
-  const mode = settings.fireMode ?? 'earliest';
-
-  const solvedAge = degenerate ? null : solveEarliestFireAge(settings, pots, { runs: MC_RUNS });
-  // Stale persisted values (v1 default 55) can sit below currentAge or beyond planToAge.
-  const chosenAge = Math.min(Math.max(settings.targetRetirementAge ?? 55, settings.currentAge), planTo);
-  const headlineAge = mode === 'earliest' ? solvedAge : chosenAge;
-
-  const mc = headlineAge != null ? runMonteCarlo(settings, pots, headlineAge, { runs: MC_RUNS }) : null;
   const curve = degenerate ? [] : successCurve(settings, pots, { runs: CURVE_RUNS });
-
-  // Same seed and run count as the headline (common random numbers) so the deltas are real.
-  let sensitivity: FireCalcResult['sensitivity'] = null;
-  if (headlineAge != null && !degenerate) {
-    const later = runMonteCarlo(settings, pots, Math.min(headlineAge + 1, planTo - 1), { runs: MC_RUNS });
-    const lessSpend = runMonteCarlo(
-      { ...settings, annualExpensesInRetirement: Math.max(settings.annualExpensesInRetirement - 2000, 0) },
-      pots, headlineAge, { runs: MC_RUNS },
-    );
-    sensitivity = { later: later.successRate, lessSpend: lessSpend.successRate };
+  if (retireAge == null || degenerate) {
+    return { id, mc: null, backtest: null, curve, sensitivity: null };
   }
 
-  // In earliest mode, solve for the age that's actually headlined (falling back to
-  // chosenAge if unreachable so the card still has something to show); in fixedAge
-  // mode it's always the chosen age. Use MC_RUNS (not the module's DEFAULT_RUNS) so
-  // this number is consistent with the confidence shown elsewhere.
-  const targetAge = mode === 'earliest' ? (solvedAge ?? chosenAge) : chosenAge;
-  const requiredContribution = degenerate
-    ? null
-    : solveRequiredContribution(settings, pots, targetAge, { runs: MC_RUNS });
-
-  return { id, solvedAge, headlineAge, mc, curve, sensitivity, requiredContribution };
+  const mc = runMonteCarlo(settings, pots, retireAge, { runs: MC_RUNS });
+  const backtest = runBacktest(settings, pots, retireAge);
+  const later = runMonteCarlo(settings, pots, Math.min(retireAge + 1, planTo - 1), { runs: MC_RUNS });
+  const lessSpend = runMonteCarlo(
+    { ...settings, annualExpensesInRetirement: Math.max(settings.annualExpensesInRetirement - 2000, 0) },
+    pots, retireAge, { runs: MC_RUNS },
+  );
+  return { id, mc, backtest, curve, sensitivity: { later: later.successRate, lessSpend: lessSpend.successRate } };
 }
